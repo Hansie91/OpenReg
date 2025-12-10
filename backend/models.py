@@ -33,6 +33,7 @@ class ReportVersionStatus(str, enum.Enum):
 class ValidationSeverity(str, enum.Enum):
     WARNING = "warning"
     BLOCKING = "blocking"
+    CORRECTABLE = "correctable"  # Segregate failures, allow partial submission
 
 
 class ValidationRuleType(str, enum.Enum):
@@ -83,6 +84,14 @@ class DeliveryStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     SUCCESS = "success"
     FAILED = "failed"
+
+
+class ExceptionStatus(str, enum.Enum):
+    PENDING = "pending"
+    AMENDED = "amended"
+    RESUBMITTED = "resubmitted"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
 
 
 class AuditAction(str, enum.Enum):
@@ -282,6 +291,48 @@ class ValidationRule(Base, TimestampMixin):
     
     # Relationships
     reports = relationship("ReportValidation", back_populates="validation_rule", cascade="all, delete-orphan")
+    validation_results = relationship("ValidationResult", back_populates="validation_rule", cascade="all, delete-orphan")
+    exceptions = relationship("ValidationException", back_populates="validation_rule", cascade="all, delete-orphan")
+
+
+class ValidationResult(Base, TimestampMixin):
+    __tablename__ = "validation_results"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
+    validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
+    execution_phase = Column(Enum(ExecutionPhase), nullable=False)
+    passed = Column(Boolean, nullable=False)
+    failed_count = Column(Integer, default=0, nullable=False)
+    warning_count = Column(Integer, default=0, nullable=False)
+    exception_count = Column(Integer, default=0, nullable=False)  # Correctable failures
+    execution_time_ms = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    # Relationships
+    validation_rule = relationship("ValidationRule", back_populates="validation_results")
+
+
+class ValidationException(Base, TimestampMixin):
+    __tablename__ = "validation_exceptions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
+    validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
+    row_number = Column(Integer, nullable=False)  # Which row in dataset failed
+    original_data = Column(JSONB, nullable=False)  # Failed transaction data
+    amended_data = Column(JSONB, nullable=True)  # User corrections
+    error_message = Column(Text, nullable=False)
+    status = Column(Enum(ExceptionStatus), default=ExceptionStatus.PENDING, nullable=False, index=True)
+    
+    # Amendment tracking
+    amended_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    amended_at = Column(DateTime(timezone=True), nullable=True)
+    resubmitted_at = Column(DateTime(timezone=True), nullable=True)
+    resubmitted_job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=True)
+    
+    # Relationships
+    validation_rule = relationship("ValidationRule", back_populates="exceptions")
 
 
 # === Scheduling ===
