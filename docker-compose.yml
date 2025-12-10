@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Metadata Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openreg-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openreg}
+      POSTGRES_USER: ${POSTGRES_USER:-openreg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openreg_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openreg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openreg-network
+
+  # Redis - Job Queue & Cache
+  redis:
+    image: redis:7-alpine
+    container_name: openreg-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openreg-network
+
+  # MinIO - S3-Compatible Artifact Storage
+  minio:
+    image: minio/minio:latest
+    container_name: openreg-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - openreg-network
+
+  # Backend API - FastAPI
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: openreg-backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openreg}:${POSTGRES_PASSWORD:-openreg_dev_password}@postgres:5432/${POSTGRES_DB:-openreg}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openreg-network
+
+  # Celery Worker - Report Execution
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: openreg-worker
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openreg}:${POSTGRES_PASSWORD:-openreg_dev_password}@postgres:5432/${POSTGRES_DB:-openreg}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A worker worker --loglevel=info --concurrency=2
+    networks:
+      - openreg-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Celery Beat - Scheduler
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: openreg-beat
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openreg}:${POSTGRES_PASSWORD:-openreg_dev_password}@postgres:5432/${POSTGRES_DB:-openreg}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A worker beat --loglevel=info
+    networks:
+      - openreg-network
+
+  # Frontend - React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: openreg-frontend
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - openreg-network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  openreg-network:
+    driver: bridge

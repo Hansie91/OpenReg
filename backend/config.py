@@ -1,0 +1,56 @@
+from pydantic_settings import BaseSettings
+from typing import List
+import os
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables"""
+    
+    # Database
+    DATABASE_URL: str = "postgresql://openreg:openreg_dev_password@localhost:5432/openreg"
+    
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # MinIO / S3
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_USE_SSL: bool = False
+    ARTIFACT_BUCKET: str = "openreg-artifacts"
+    
+    # Security
+    SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    
+    # Encryption (Fernet key for credential encryption)
+    ENCRYPTION_KEY: str = "generate-a-fernet-key-in-production"
+    
+    # Application
+    ENVIRONMENT: str = "development"
+    LOG_LEVEL: str = "INFO"
+    
+    # CORS - stored as comma-separated string from env
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Get CORS origins as a list"""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(',') if origin.strip()]
+    
+    # Celery
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    
+    # Worker Limits
+    WORKER_MAX_EXECUTION_TIME: int = 3600  # 1 hour max per job
+    WORKER_MAX_MEMORY_MB: int = 2048  # 2GB max per worker
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+settings = Settings()
