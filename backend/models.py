@@ -331,8 +331,21 @@ class ValidationException(Base, TimestampMixin):
     resubmitted_at = Column(DateTime(timezone=True), nullable=True)
     resubmitted_job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=True)
     
-    # Relationships
     validation_rule = relationship("ValidationRule", back_populates="exceptions")
+
+
+class ReportValidation(Base, TimestampMixin):
+    __tablename__ = "report_validations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_version_id = Column(UUID(as_uuid=True), ForeignKey("report_versions.id"), nullable=False, index=True)
+    validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
+    execution_phase = Column(Enum(ExecutionPhase), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Relationships
+    report_version = relationship("ReportVersion")
+    validation_rule = relationship("ValidationRule", back_populates="reports")
 
 
 # === Scheduling ===
