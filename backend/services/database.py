@@ -1,25 +1,200 @@
 """
 Database Connection Service
 
-Provides real connection testing and query execution for various database types.
+Provides connection pooling, query execution, and testing for various database types.
+Supports PostgreSQL, MySQL, SQL Server, Oracle, and generic ODBC connections.
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+import time
+from typing import Dict, Any, Optional, List, Generator, Tuple
 from contextlib import contextmanager
+from threading import Lock
+import signal
 
 logger = logging.getLogger(__name__)
 
+
+# ==================== Custom Exceptions ====================
 
 class DatabaseConnectionError(Exception):
     """Raised when database connection fails"""
     pass
 
 
+class DatabaseQueryError(Exception):
+    """Raised when query execution fails"""
+    pass
+
+
+class DatabaseTimeoutError(Exception):
+    """Raised when query exceeds timeout"""
+    pass
+
+
+class DatabasePoolExhaustedError(Exception):
+    """Raised when connection pool is exhausted"""
+    pass
+
+
+# ==================== Connection Pool Manager ====================
+
+class ConnectionPoolManager:
+    """Manages connection pools for different database types"""
+    
+    _pools = {}
+    _pool_lock = Lock()
+    
+    @classmethod
+    def get_pool(cls, pool_id: str, db_type: str, config: Dict, credentials: Dict, pool_config: Dict):
+        """Get or create a connection pool"""
+        with cls._pool_lock:
+            if pool_id not in cls._pools:
+                cls._pools[pool_id] = cls._create_pool(db_type, config, credentials, pool_config)
+            return cls._pools[pool_id]
+    
+    @classmethod
+    def _create_pool(cls, db_type: str, config: Dict, credentials: Dict, pool_config: Dict):
+        """Create a new connection pool based on database type"""
+        min_conn = pool_config.get('min_connections', 2)
+        max_conn = pool_config.get('max_connections', 10)
+        
+        if db_type == 'postgresql':
+            from psycopg2.pool import SimpleConnectionPool
+            return SimpleConnectionPool(
+                min_conn,
+                max_conn,
+                host=config.get('host'),
+                port=config.get('port', 5432),
+                database=config.get('database'),
+                user=credentials.get('username'),
+                password=credentials.get('password')
+            )
+        elif db_type == 'oracle':
+            import oracledb
+            dsn = f"{config.get('host')}:{config.get('port', 1521)}/{config.get('database')}"
+            return oracledb.create_pool(
+                user=credentials.get('username'),
+                password=credentials.get('password'),
+                dsn=dsn,
+                min=min_conn,
+                max=max_conn
+            )
+        else:
+            # For MySQL, SQL Server, and ODBC, we'll use a simple custom pool
+            return SimplePool(db_type, config, credentials, min_conn, max_conn)
+    
+    @classmethod
+    def close_pool(cls, pool_id: str):
+        """Close and remove a connection pool"""
+        with cls._pool_lock:
+            if pool_id in cls._pools:
+                pool = cls._pools.pop(pool_id)
+                try:
+                    if hasattr(pool, 'closeall'):
+                        pool.closeall()
+                    elif hasattr(pool, 'close'):
+                        pool.close()
+                except Exception as e:
+                    logger.error(f"Error closing pool {pool_id}: {e}")
+    
+    @classmethod
+    def close_all_pools(cls):
+        """Close all connection pools"""
+        pool_ids = list(cls._pools.keys())
+        for pool_id in pool_ids:
+            cls.close_pool(pool_id)
+
+
+class SimplePool:
+    """Simple connection pool for databases without native pooling"""
+    
+    def __init__(self, db_type: str, config: Dict, credentials: Dict, min_conn: int, max_conn: int):
+        self.db_type = db_type
+        self.config = config
+        self.credentials = credentials
+        self.min_conn = min_conn
+        self.max_conn = max_conn
+        self._available = []
+        self._in_use = set()
+        self._lock = Lock()
+        
+        # Initialize minimum connections
+        for _ in range(min_conn):
+            conn = self._create_connection()
+            self._available.append(conn)
+    
+    def _create_connection(self):
+        """Create a new database connection"""
+        if self.db_type == 'mysql':
+            import pymysql
+            return pymysql.connect(
+                host=self.config.get('host'),
+                port=int(self.config.get('port', 3306)),
+                database=self.config.get('database'),
+                user=self.credentials.get('username'),
+                password=self.credentials.get('password')
+            )
+        elif self.db_type == 'sqlserver':
+            import pyodbc
+            driver = self.config.get('driver', 'ODBC Driver 17 for SQL Server')
+            conn_str = (
+                f"DRIVER={{{driver}}};"
+                f"SERVER={self.config.get('host')},{self.config.get('port', 1433)};"
+                f"DATABASE={self.config.get('database')};"
+                f"UID={self.credentials.get('username')};"
+                f"PWD={self.credentials.get('password')};"
+            )
+            return pyodbc.connect(conn_str)
+        else:
+            raise DatabaseConnectionError(f"Unsupported database type for pooling: {self.db_type}")
+    
+    def getconn(self):
+        """Get a connection from the pool"""
+        with self._lock:
+            if self._available:
+                conn = self._available.pop()
+                self._in_use.add(conn)
+                return conn
+            elif len(self._in_use) < self.max_conn:
+                conn = self._create_connection()
+                self._in_use.add(conn)
+                return conn
+            else:
+                raise DatabasePoolExhaustedError(f"Connection pool exhausted (max: {self.max_conn})")
+    
+    def putconn(self, conn):
+        """Return a connection to the pool"""
+        with self._lock:
+            if conn in self._in_use:
+                self._in_use.remove(conn)
+                self._available.append(conn)
+    
+    def closeall(self):
+        """Close all connections in the pool"""
+        with self._lock:
+            for conn in self._available:
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection: {e}")
+            for conn in self._in_use:
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection: {e}")
+            self._available.clear()
+            self._in_use.clear()
+
+
+# ==================== Database Service ====================
+
 class DatabaseService:
     """Service for testing and executing database connections"""
     
     SUPPORTED_TYPES = ['postgresql', 'mysql', 'sqlserver', 'oracle', 'odbc']
+    
+    # ==================== Connection Testing ====================
     
     @staticmethod
     def test_connection(
@@ -243,7 +418,146 @@ class DatabaseService:
             }
         except Exception as e:
             raise DatabaseConnectionError(f"ODBC connection failed: {str(e)}")
-
+    
+    # ==================== Query Execution ====================
+    
+    @staticmethod
+    def execute_query(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str],
+        query: str,
+        params: Optional[Tuple] = None,
+        timeout: int = 300
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute a SQL query and return results.
+        
+        Args:
+            db_type: Database type
+            config: Connection config
+            credentials: Username and password
+            query: SQL query to execute
+            params: Optional query parameters for parameterized queries
+            timeout: Query timeout in seconds (default: 300)
+            
+        Returns:
+            List of dictionaries representing rows
+        """
+        with DatabaseService.get_connection(db_type, config, credentials) as conn:
+            cursor = conn.cursor()
+            
+            try:
+                # Set query timeout if supported
+                DatabaseService._set_query_timeout(cursor, db_type, timeout)
+                
+                # Execute query
+                start_time = time.time()
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                # Fetch results
+                if cursor.description:  # SELECT query
+                    columns = [desc[0] for desc in cursor.description]
+                    rows = cursor.fetchall()
+                    
+                    # Convert to list of dicts
+                    results = []
+                    for row in rows:
+                        results.append(dict(zip(columns, row)))
+                    
+                    elapsed = time.time() - start_time
+                    logger.info(f"Query executed in {elapsed:.2f}s, returned {len(results)} rows")
+                    
+                    return results
+                else:  # INSERT/UPDATE/DELETE
+                    conn.commit()
+                    rowcount = cursor.rowcount
+                    logger.info(f"Query executed, affected {rowcount} rows")
+                    return [{"affected_rows": rowcount}]
+                    
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Query execution failed: {str(e)}")
+                raise DatabaseQueryError(f"Query failed: {str(e)}")
+            finally:
+                cursor.close()
+    
+    @staticmethod
+    def execute_query_stream(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str],
+        query: str,
+        params: Optional[Tuple] = None,
+        chunk_size: int = 1000
+    ) -> Generator[List[Dict[str, Any]], None, None]:
+        """
+        Execute a query and stream results in chunks (for large datasets).
+        
+        Args:
+            db_type: Database type
+            config: Connection config
+            credentials: Username and password
+            query: SQL query to execute
+            params: Optional query parameters
+            chunk_size: Number of rows per chunk
+            
+        Yields:
+            Chunks of rows as list of dictionaries
+        """
+        with DatabaseService.get_connection(db_type, config, credentials) as conn:
+            cursor = conn.cursor()
+            
+            try:
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                if not cursor.description:
+                    raise DatabaseQueryError("Query did not return results")
+                
+                columns = [desc[0] for desc in cursor.description]
+                
+                while True:
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break
+                    
+                    chunk = []
+                    for row in rows:
+                        chunk.append(dict(zip(columns, row)))
+                    
+                    yield chunk
+                    
+            except Exception as e:
+                logger.error(f"Query streaming failed: {str(e)}")
+                raise DatabaseQueryError(f"Query streaming failed: {str(e)}")
+            finally:
+                cursor.close()
+    
+    @staticmethod
+    def _set_query_timeout(cursor, db_type: str, timeout: int):
+        """Set query timeout based on database type"""
+        try:
+            if db_type == 'postgresql':
+                cursor.execute(f"SET statement_timeout = {timeout * 1000};")  # milliseconds
+            elif db_type == 'mysql':
+                cursor.execute(f"SET max_execution_time = {timeout * 1000};")  # milliseconds
+            elif db_type == 'sqlserver':
+                # SQL Server uses connection timeout, set at connection level
+                pass
+            elif db_type == 'oracle':
+                # Oracle timeout is typically set at session level
+                pass
+        except Exception as e:
+            logger.warning(f"Could not set query timeout for {db_type}: {e}")
+    
+    # ==================== Connection Management ====================
+    
     @staticmethod
     @contextmanager
     def get_connection(
@@ -292,6 +606,20 @@ class DatabaseService:
                     f"PWD={credentials.get('password')};"
                 )
                 conn = pyodbc.connect(conn_str)
+            elif db_type == 'oracle':
+                import oracledb
+                dsn = f"{config.get('host')}:{config.get('port', 1521)}/{config.get('database')}"
+                conn = oracledb.connect(
+                    user=credentials.get('username'),
+                    password=credentials.get('password'),
+                    dsn=dsn
+                )
+            elif db_type == 'odbc':
+                import pyodbc
+                conn_str = config.get('connection_string', '')
+                conn_str = conn_str.replace('{username}', credentials.get('username', ''))
+                conn_str = conn_str.replace('{password}', credentials.get('password', ''))
+                conn = pyodbc.connect(conn_str)
             else:
                 raise DatabaseConnectionError(f"Unsupported database type: {db_type}")
             
@@ -300,3 +628,22 @@ class DatabaseService:
         finally:
             if conn:
                 conn.close()
+    
+    @staticmethod
+    def check_connection_health(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str]
+    ) -> bool:
+        """
+        Check if database connection is healthy.
+        
+        Returns:
+            True if connection is healthy, False otherwise
+        """
+        try:
+            result = DatabaseService.test_connection(db_type, config, credentials)
+            return result.get('status') == 'success'
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return False

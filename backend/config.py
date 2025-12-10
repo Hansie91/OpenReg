@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     
+    # Database Connection Pooling
+    DB_POOL_MIN_CONNECTIONS: int = 2
+    DB_POOL_MAX_CONNECTIONS: int = 10
+    DB_POOL_TIMEOUT: int = 30  # seconds
+    DB_QUERY_TIMEOUT: int = 300  # 5 minutes default
+    DB_QUERY_CHUNK_SIZE: int = 1000  # rows per chunk for streaming
+    
     # Worker Limits
     WORKER_MAX_EXECUTION_TIME: int = 3600  # 1 hour max per job
     WORKER_MAX_MEMORY_MB: int = 2048  # 2GB max per worker
