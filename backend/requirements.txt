@@ -40,6 +40,11 @@ paramiko==3.4.0
 pandas==2.1.4
 lxml==5.1.0
 openpyxl==3.1.2
+numpy==1.26.3
+
+# Code Execution & Security
+RestrictedPython==6.2
+defusedxml==0.7.1
 
 # HTTP Client
 httpx==0.26.0

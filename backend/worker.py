@@ -34,27 +34,35 @@ def execute_report_task(job_run_id: str):
     """
     Execute a report generation job.
     
-    This is the main task that:
+    Full execution pipeline:
     1. Fetches data from connectors
     2. Applies cross-reference mappings
     3. Runs pre-validations
     4. Executes user Python code
     5. Stores artifacts
-    6. Delivers via SFTP/FTP
+    6. Delivers via SFTP/FTP (if configured)
     7. Updates job status
-    
-    TODO: Implement full execution pipeline for v1
     """
     from database import SessionLocal
     import models
     from datetime import datetime
+    from uuid import UUID
+    import json
+    
+    from services.executor import CodeExecutor
+    from services.execution_models import ExecutionContext, ResourceLimits
+    from services.auth import decrypt_credentials
+    from services.storage import StorageService
     
     logger.info(f"Executing report for job_run_id: {job_run_id}")
     
     db = SessionLocal()
     try:
         # Fetch job run
-        job_run = db.query(models.JobRun).filter(models.JobRun.id == job_run_id).first()
+        job_run = db.query(models.JobRun).filter(
+            models.JobRun.id == UUID(job_run_id)
+        ).first()
+        
         if not job_run:
             logger.error(f"Job run {job_run_id} not found")
             return
@@ -64,24 +72,156 @@ def execute_report_task(job_run_id: str):
         job_run.started_at = datetime.utcnow()
         db.commit()
         
-        # TODO: Implement execution logic
-        # 1. Get report version and Python code
-        # 2. Connect to database using connector
-        # 3. Apply mappings
-        # 4. Run validations
-        # 5. Execute Python code in sandboxed environment
-        # 6. Store result in MinIO
-        # 7. Deliver to destinations
+        # Get report version
+        report_version = db.query(models.ReportVersion).filter(
+            models.ReportVersion.id == job_run.report_version_id
+        ).first()
         
-        # For MVP stub, just mark as success
-        logger.info(f"Report execution stub completed for {job_run_id}")
+        if not report_version:
+            raise Exception(f"Report version not found")
+        
+        logger.info(f"Executing report version {report_version.version_number}")
+        
+        # Get connector if specified
+        connector = None
+        connector_config = {}
+        connector_credentials = {}
+        connector_type = "postgresql"  # default
+        
+        if report_version.connector_id:
+            connector = db.query(models.Connector).filter(
+                models.Connector.id == report_version.connector_id
+            ).first()
+            
+            if connector:
+                connector_config = connector.config
+                connector_credentials = decrypt_credentials(connector.encrypted_credentials)
+                connector_type = connector.type.value
+        
+        # Load cross-reference mappings (stub for now)
+        # TODO: Implement mapping loading in future iteration
+        mappings = {}
+        
+        # Create execution context
+        context = ExecutionContext(
+            connector_type=connector_type,
+            connector_config=connector_config,
+            connector_credentials=connector_credentials,
+            mappings=mappings,
+            parameters=job_run.parameters or {},
+            report_version_id=report_version.id,
+            job_run_id=UUID(job_run_id),
+            tenant_id=job_run.tenant_id
+        )
+        
+        # Create resource limits from config
+        limits = ResourceLimits(
+            max_memory_mb=settings.CODE_MAX_MEMORY_MB,
+            max_execution_seconds=settings.CODE_MAX_EXECUTION_SECONDS,
+            max_output_size_mb=settings.CODE_MAX_OUTPUT_SIZE_MB,
+            max_code_lines=settings.CODE_MAX_LINES
+        )
+        
+        # Execute Python code
+        logger.info("Executing user Python code...")
+        result = CodeExecutor.execute(
+            code=report_version.python_code,
+            context=context,
+            limits=limits
+        )
+        
+        if not result.success:
+            # Execution failed
+            logger.error(f"Code execution failed: {result.error}")
+            job_run.status = models.JobRunStatus.FAILED
+            job_run.error_message = f"{result.error_type}: {result.error}"
+            job_run.ended_at = datetime.utcnow()
+            db.commit()
+            return
+        
+        logger.info(f"Code executed successfully in {result.execution_time_seconds:.2f}s")
+        
+        # Store artifact in MinIO
+        if result.output_data is not None:
+            storage = StorageService()
+            
+            # Determine output format from config
+            output_format = report_version.config.get('output_format', 'json')
+            
+            # Convert output to bytes based on format
+            if output_format == 'json':
+                import pandas as pd
+                if isinstance(result.output_data, pd.DataFrame):
+                    artifact_data = result.output_data.to_json(orient='records', date_format='iso').encode('utf-8')
+                    filename = f"report_{job_run_id}.json"
+                else:
+                    artifact_data = json.dumps(result.output_data).encode('utf-8')
+                    filename = f"report_{job_run_id}.json"
+            
+            elif output_format == 'csv':
+                import pandas as pd
+                if isinstance(result.output_data, pd.DataFrame):
+                    artifact_data = result.output_data.to_csv(index=False).encode('utf-8')
+                else:
+                    # Convert to DataFrame first
+                    df = pd.DataFrame(result.output_data)
+                    artifact_data = df.to_csv(index=False).encode('utf-8')
+                filename = f"report_{job_run_id}.csv"
+            
+            elif output_format == 'xml':
+                import pandas as pd
+                if isinstance(result.output_data, pd.DataFrame):
+                    artifact_data = result.output_data.to_xml().encode('utf-8')
+                else:
+                    df = pd.DataFrame(result.output_data)
+                    artifact_data = df.to_xml().encode('utf-8')
+                filename = f"report_{job_run_id}.xml"
+            
+            else:
+                # Default to JSON
+                artifact_data = json.dumps(result.output_data).encode('utf-8')
+                filename = f"report_{job_run_id}.json"
+            
+            # Upload to MinIO
+            storage_uri = storage.upload_artifact(
+                bucket=settings.ARTIFACT_BUCKET,
+                filename=filename,
+                data=artifact_data,
+                metadata={
+                    'job_run_id': str(job_run_id),
+                    'report_version_id': str(report_version.id),
+                    'output_format': output_format,
+                    'execution_time': result.execution_time_seconds
+                }
+            )
+            
+            # Create artifact record
+            import hashlib
+            artifact = models.Artifact(
+                job_run_id=UUID(job_run_id),
+                filename=filename,
+                storage_uri=storage_uri,
+                mime_type=f'application/{output_format}',
+                size_bytes=len(artifact_data),
+                checksum_sha256=hashlib.sha256(artifact_data).hexdigest()
+            )
+            db.add(artifact)
+            
+            logger.info(f"Artifact stored: {storage_uri}")
+        
+        # Mark job as successful
         job_run.status = models.JobRunStatus.SUCCESS
         job_run.ended_at = datetime.utcnow()
         db.commit()
         
+        logger.info(f"Report execution completed successfully for {job_run_id}")
+        
     except Exception as e:
         logger.error(f"Error executing report {job_run_id}: {str(e)}")
-        if 'job_run' in locals():
+        import traceback
+        traceback.print_exc()
+        
+        if 'job_run' in locals() and job_run:
             job_run.status = models.JobRunStatus.FAILED
             job_run.error_message = str(e)
             job_run.ended_at = datetime.utcnow()

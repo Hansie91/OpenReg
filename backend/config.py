@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     DB_QUERY_TIMEOUT: int = 300  # 5 minutes default
     DB_QUERY_CHUNK_SIZE: int = 1000  # rows per chunk for streaming
     
+    # Code Execution Limits
+    CODE_MAX_MEMORY_MB: int = 512
+    CODE_MAX_EXECUTION_SECONDS: int = 300
+    CODE_MAX_OUTPUT_SIZE_MB: int = 100
+    CODE_MAX_LINES: int = 5000
+    
     # Worker Limits
     WORKER_MAX_EXECUTION_TIME: int = 3600  # 1 hour max per job
     WORKER_MAX_MEMORY_MB: int = 2048  # 2GB max per worker

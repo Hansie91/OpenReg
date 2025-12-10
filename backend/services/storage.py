@@ -40,40 +40,61 @@ class StorageService:
         except S3Error as e:
             logger.error(f"Error ensuring bucket exists: {e}")
     
+    def create_bucket(self, bucket_name: str):
+        """Create a bucket if it doesn't exist"""
+        try:
+            if not self.client.bucket_exists(bucket_name):
+                self.client.make_bucket(bucket_name)
+                logger.info(f"Created bucket: {bucket_name}")
+        except S3Error as e:
+            logger.error(f"Error creating bucket: {e}")
+    
     def upload_artifact(
         self,
-        file_data: bytes,
-        object_name: str,
-        content_type: str = "application/octet-stream"
-    ) -> Tuple[str, str, int]:
+        bucket: str,
+        filename: str,
+        data: bytes,
+        metadata: dict = None
+    ) -> str:
         """
-        Upload an artifact to storage.
+        Upload artifact data to MinIO.
         
+        Args:
+            bucket: Bucket name
+            filename: Object filename
+            data: Binary data to upload
+            metadata: Optional metadata dictionary
+            
         Returns:
-            Tuple of (storage_uri, checksum_sha256, size_bytes)
+            Storage URI (s3://bucket/filename)
         """
-        # Calculate checksum
-        checksum = hashlib.sha256(file_data).hexdigest()
-        size = len(file_data)
+        from datetime import datetime
+        import io
         
-        # Upload to MinIO
-        try:
-            self.client.put_object(
-                self.bucket,
-                object_name,
-                BytesIO(file_data),
-                size,
-                content_type=content_type
-            )
-            
-            storage_uri = f"s3://{self.bucket}/{object_name}"
-            logger.info(f"Uploaded artifact: {storage_uri}, size: {size} bytes")
-            
-            return storage_uri, checksum, size
+        # Ensure bucket exists
+        self.create_bucket(bucket)
         
-        except S3Error as e:
-            logger.error(f"Error uploading artifact: {e}")
-            raise
+        # Add timestamp to filename for uniqueness
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{filename}"
+        
+        # Convert metadata to string format for MinIO
+        minio_metadata = {}
+        if metadata:
+            for key, value in metadata.items():
+                minio_metadata[f"x-amz-meta-{key}"] = str(value)
+        
+        # Upload
+        data_stream = io.BytesIO(data)
+        self.client.put_object(
+            bucket,
+            unique_filename,
+            data_stream,
+            length=len(data),
+            metadata=minio_metadata
+        )
+        
+        return f"s3://{bucket}/{unique_filename}"
     
     def download_artifact(self, object_name: str) -> bytes:
         """Download an artifact from storage"""
