@@ -73,6 +73,7 @@ const navigation = [
     { name: 'Connectors', href: '/connectors', icon: Icons.Connectors },
     { name: 'Mappings', href: '/mappings', icon: Icons.Mappings },
     { name: 'Validations', href: '/validations', icon: Icons.Validations },
+    { name: 'Exceptions', href: '/exceptions', icon: Icons.Validations },
     { name: 'Schedules', href: '/schedules', icon: Icons.Schedules },
     { name: 'Destinations', href: '/destinations', icon: Icons.Destinations },
     { name: 'Runs', href: '/runs', icon: Icons.Runs },

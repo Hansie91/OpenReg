@@ -10,6 +10,7 @@ import Connectors from './pages/Connectors';
 import Runs from './pages/Runs';
 import Mappings from './pages/Mappings';
 import Validations from './pages/Validations';
+import Exceptions from './pages/ExceptionsPage';
 import Schedules from './pages/Schedules';
 import Destinations from './pages/Destinations';
 import Admin from './pages/Admin';
@@ -39,6 +40,7 @@ function App() {
                         <Route path="runs" element={<Runs />} />
                         <Route path="mappings" element={<Mappings />} />
                         <Route path="validations" element={<Validations />} />
+                        <Route path="exceptions" element={<Exceptions />} />
                         <Route path="schedules" element={<Schedules />} />
                         <Route path="destinations" element={<Destinations />} />
                         <Route path="admin" element={<Admin />} />
