@@ -61,6 +61,7 @@ app.include_router(connectors.router, prefix=f"{API_PREFIX}/connectors", tags=["
 app.include_router(queries.router, prefix=f"{API_PREFIX}/queries", tags=["Queries"])
 app.include_router(mappings.router, prefix=f"{API_PREFIX}/mappings", tags=["Cross-Reference"])
 app.include_router(validations.router, prefix=f"{API_PREFIX}/validations", tags=["Validations"])
+app.include_router(exceptions.router, prefix=f"{API_PREFIX}/exceptions", tags=["Exceptions"])
 app.include_router(schedules.router, prefix=f"{API_PREFIX}/schedules", tags=["Schedules"])
 app.include_router(destinations.router, prefix=f"{API_PREFIX}/destinations", tags=["Destinations"])
 app.include_router(runs.router, prefix=f"{API_PREFIX}/runs", tags=["Job Runs"])
