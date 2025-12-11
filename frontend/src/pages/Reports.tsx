@@ -97,6 +97,7 @@ export default function Reports() {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
+    const [editorTab, setEditorTab] = useState<'code' | 'history'>('code');
 
     // Form state
     const [name, setName] = useState('');
@@ -111,6 +112,19 @@ export default function Reports() {
 
     const { data: connectors } = useQuery('connectors', () =>
         connectorsAPI.list().then((res) => res.data)
+    );
+
+    // Fetch execution history and stats for selected report
+    const { data: executions } = useQuery(
+        ['report-executions', selectedReport?.id],
+        () => selectedReport ? reportsAPI.getExecutions(selectedReport.id, { limit: 10 }).then((res) => res.data) : null,
+        { enabled: !!selectedReport }
+    );
+
+    const { data: reportStats } = useQuery(
+        ['report-stats', selectedReport?.id],
+        () => selectedReport ? reportsAPI.getStats(selectedReport.id).then((res) => res.data) : null,
+        { enabled: !!selectedReport }
     );
 
     const createMutation = useMutation(
@@ -154,6 +168,7 @@ export default function Reports() {
         setSelectedReport(null);
         setPythonCode(DEFAULT_CODE);
         setConnectorId('');
+        setEditorTab('code');
     };
 
     const openEditModal = (report: Report) => {
@@ -360,7 +375,7 @@ export default function Reports() {
                             <div>
                                 <h3 className="modal-title">{selectedReport.name}</h3>
                                 <p className="text-sm text-gray-500 mt-0.5">
-                                    Edit Python transformation logic
+                                    Edit and view execution history
                                 </p>
                             </div>
                             <button onClick={closeEditModal} className="btn btn-ghost btn-icon">
@@ -368,70 +383,171 @@ export default function Reports() {
                             </button>
                         </div>
 
+                        {/* Tabs */}
+                        <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b border-gray-200">
+                            <button
+                                onClick={() => setEditorTab('code')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'code'
+                                        ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Code Editor
+                            </button>
+                            <button
+                                onClick={() => setEditorTab('history')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'history'
+                                        ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Execution History
+                            </button>
+                        </div>
+
                         <div className="flex-1 flex overflow-hidden">
-                            {/* Code Editor */}
-                            <div className="flex-1 border-r border-gray-200">
-                                <Editor
-                                    height="100%"
-                                    defaultLanguage="python"
-                                    value={pythonCode}
-                                    onChange={(value) => setPythonCode(value || '')}
-                                    theme="vs-light"
-                                    options={{
-                                        minimap: { enabled: false },
-                                        fontSize: 14,
-                                        lineNumbers: 'on',
-                                        scrollBeyondLastLine: false,
-                                        automaticLayout: true,
-                                        tabSize: 4,
-                                        wordWrap: 'on',
-                                    }}
-                                />
-                            </div>
-
-                            {/* Sidebar */}
-                            <div className="w-72 p-4 bg-gray-50 overflow-y-auto">
-                                <h4 className="text-sm font-semibold text-gray-900 mb-4">Configuration</h4>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="input-label">Data Source</label>
-                                        <select
-                                            className="select"
-                                            value={connectorId}
-                                            onChange={(e) => setConnectorId(e.target.value)}
-                                        >
-                                            <option value="">Select connector...</option>
-                                            {connectors?.map((c: any) => (
-                                                <option key={c.id} value={c.id}>
-                                                    {c.name} ({c.type})
-                                                </option>
-                                            ))}
-                                        </select>
+                            {/* Code Editor Tab */}
+                            {editorTab === 'code' && (
+                                <>
+                                    <div className="flex-1 border-r border-gray-200">
+                                        <Editor
+                                            height="100%"
+                                            defaultLanguage="python"
+                                            value={pythonCode}
+                                            onChange={(value) => setPythonCode(value || '')}
+                                            theme="vs-light"
+                                            options={{
+                                                minimap: { enabled: false },
+                                                fontSize: 14,
+                                                lineNumbers: 'on',
+                                                scrollBeyondLastLine: false,
+                                                automaticLayout: true,
+                                                tabSize: 4,
+                                                wordWrap: 'on',
+                                            }}
+                                        />
                                     </div>
 
-                                    <div>
-                                        <label className="input-label">Output Format</label>
-                                        <select className="select" defaultValue="csv">
-                                            <option value="csv">CSV</option>
-                                            <option value="xml">XML</option>
-                                            <option value="json">JSON</option>
-                                        </select>
+                                    {/* Sidebar */}
+                                    <div className="w-72 p-4 bg-gray-50 overflow-y-auto">
+                                        <h4 className="text-sm font-semibold text-gray-900 mb-4">Configuration</h4>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="input-label">Data Source</label>
+                                                <select
+                                                    className="select"
+                                                    value={connectorId}
+                                                    onChange={(e) => setConnectorId(e.target.value)}
+                                                >
+                                                    <option value="">Select connector...</option>
+                                                    {connectors?.map((c: any) => (
+                                                        <option key={c.id} value={c.id}>
+                                                            {c.name} ({c.type})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="input-label">Output Format</label>
+                                                <select className="select" defaultValue="csv">
+                                                    <option value="csv">CSV</option>
+                                                    <option value="xml">XML</option>
+                                                    <option value="json">JSON</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-6 pt-6 border-t border-gray-200">
+                                            <h4 className="text-sm font-semibold text-gray-900 mb-3">Quick Reference</h4>
+                                            <div className="text-xs text-gray-600 space-y-2 bg-white p-3 rounded-lg border border-gray-200">
+                                                <p><code className="text-indigo-600">db.execute(query, params)</code></p>
+                                                <p className="text-gray-500">Execute SQL query</p>
+                                                <p className="mt-2"><code className="text-indigo-600">mappings.lookup(set, value)</code></p>
+                                                <p className="text-gray-500">Cross-reference lookup</p>
+                                                <p className="mt-2"><code className="text-indigo-600">params.get(name)</code></p>
+                                                <p className="text-gray-500">Get report parameter</p>
+                                            </div>
+                                        </div>
                                     </div>
+                                </>
+                            )}
+
+                            {/* History Tab */}
+                            {editorTab === 'history' && (
+                                <div className="flex-1 p-6 overflow-y-auto">
+                                    {/* Statistics Cards */}
+                                    {reportStats && (
+                                        <div className="grid grid-cols-3 gap-4 mb-6">
+                                            <div className="card p-4">
+                                                <p className="text-sm text-gray-500">Total Executions</p>
+                                                <p className="text-2xl font-bold text-gray-900 mt-1">
+                                                    {reportStats.total_executions}
+                                                </p>
+                                            </div>
+                                            <div className="card p-4">
+                                                <p className="text-sm text-gray-500">Success Rate</p>
+                                                <p className="text-2xl font-bold text-emerald-600 mt-1">
+                                                    {reportStats.success_rate}%
+                                                </p>
+                                            </div>
+                                            <div className="card p-4">
+                                                <p className="text-sm text-gray-500">Avg Duration</p>
+                                                <p className="text-2xl font-bold text-gray-900 mt-1">
+                                                    {reportStats.avg_duration_seconds}s
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Execution History Table */}
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Recent Executions</h4>
+                                    {executions && executions.data && executions.data.length > 0 ? (
+                                        <div className="table-container">
+                                            <table className="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Status</th>
+                                                        <th>Started</th>
+                                                        <th>Duration</th>
+                                                        <th>Artifacts</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {executions.data.map((run: any) => (
+                                                        <tr key={run.id}>
+                                                            <td>
+                                                                <span className={`badge ${run.status === 'success' ? 'badge-success' :
+                                                                        run.status === 'failed' ? 'badge-danger' :
+                                                                            run.status === 'running' ? 'badge-info' :
+                                                                                'badge-warning'
+                                                                    }`}>
+                                                                    {run.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="text-gray-600 text-sm">
+                                                                {run.started_at ? new Date(run.started_at).toLocaleString() : '—'}
+                                                            </td>
+                                                            <td className="text-gray-600">
+                                                                {run.duration_seconds ? `${run.duration_seconds.toFixed(1)}s` : '—'}
+                                                            </td>
+                                                            <td className="text-gray-600">
+                                                                {run.artifact_count || 0}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-12 text-gray-500">
+                                            <p>No executions yet</p>
+                                            <p className="text-sm mt-1">Execute this report to see history</p>
+                                        </div>
+                                    )}
                                 </div>
-
-                                <div className="mt-6 pt-6 border-t border-gray-200">
-                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Quick Reference</h4>
-                                    <div className="text-xs text-gray-600 space-y-2 bg-white p-3 rounded-lg border border-gray-200">
-                                        <p><code className="text-indigo-600">db.execute(query, params)</code></p>
-                                        <p className="text-gray-500">Execute SQL query</p>
-                                        <p className="mt-2"><code className="text-indigo-600">mappings.lookup(set, value)</code></p>
-                                        <p className="text-gray-500">Cross-reference lookup</p>
-                                        <p className="mt-2"><code className="text-indigo-600">params.get(name)</code></p>
-                                        <p className="text-gray-500">Get report parameter</p>
-                                    </div>
-                                </div>
-                            </div>
+                            )}
                         </div>
 
                         <div className="modal-footer">

@@ -58,6 +58,10 @@ export const reportsAPI = {
         api.post(`/reports/${reportId}/versions`, data),
     updateVersion: (reportId: string, versionId: string, data: any) =>
         api.put(`/reports/${reportId}/versions/${versionId}`, data),
+    // Execution history and stats
+    getExecutions: (reportId: string, params?: any) =>
+        api.get(`/reports/${reportId}/executions`, { params }),
+    getStats: (reportId: string) => api.get(`/reports/${reportId}/stats`),
 };
 
 // Connectors API
@@ -72,8 +76,9 @@ export const connectorsAPI = {
 
 // Runs API
 export const runsAPI = {
-    list: () => api.get('/runs'),
+    list: (params?: any) => api.get('/runs', { params }),
     get: (id: string) => api.get(`/runs/${id}`),
+    getDetails: (id: string) => api.get(`/runs/${id}/details`),
     getLogs: (id: string) => api.get(`/runs/${id}/logs`),
     getArtifacts: (id: string) => api.get(`/runs/${id}/artifacts`),
     rerun: (id: string) => api.post(`/runs/${id}/rerun`),
@@ -140,5 +145,6 @@ export const adminAPI = {
     updateUser: (id: string, data: any) => api.put(`/admin/users/${id}`, data),
     deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
     listRoles: () => api.get('/admin/roles'),
-    getAuditLogs: (params?: any) => api.get('/admin/audit-logs', { params }),
+    getAuditLogs: (params?: any) => api.get('/admin/audit', { params }),
+    getAuditStats: () => api.get('/admin/audit/stats'),
 };

@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
 import enum
-from database import Base
+from backend.database import Base
 
 
 # === Enums ===

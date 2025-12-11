@@ -52,9 +52,13 @@ def execute_report_task(job_run_id: str):
     
     from services.executor import CodeExecutor
     from services.execution_models import ExecutionContext, ResourceLimits
-    from services.auth import decrypt_credentials
     from services.storage import StorageService
     from services.validation_engine import ValidationEngine
+    from services.connectors.factory import ConnectorFactory
+    from services.artifacts.generator import ArtifactGenerator
+    import pandas as pd
+    import tempfile
+    import os
     
     logger.info(f"Executing report for job_run_id: {job_run_id}")
     
@@ -85,9 +89,8 @@ def execute_report_task(job_run_id: str):
         logger.info(f"Executing report version {report_version.version_number}")
         
         # Get connector if specified
-        connector = None
+        connector_instance = None
         connector_config = {}
-        connector_credentials = {}
         connector_type = "postgresql"  # default
         
         if report_version.connector_id:
@@ -97,8 +100,14 @@ def execute_report_task(job_run_id: str):
             
             if connector:
                 connector_config = connector.config
-                connector_credentials = decrypt_credentials(connector.encrypted_credentials)
                 connector_type = connector.type.value
+                
+                # Create connector instance using factory
+                connector_instance = ConnectorFactory.create_connector(
+                    db_type=connector_type,
+                    config=connector.config,
+                    encrypted_credentials=connector.encrypted_credentials
+                )
         
         # Load cross-reference mappings (stub for now)
         mappings = {}
@@ -107,12 +116,13 @@ def execute_report_task(job_run_id: str):
         context = ExecutionContext(
             connector_type=connector_type,
             connector_config=connector_config,
-            connector_credentials=connector_credentials,
+            connector_credentials={},  # Credentials handled by connector_instance
             mappings=mappings,
             parameters=job_run.parameters or {},
             report_version_id=report_version.id,
             job_run_id=UUID(job_run_id),
-            tenant_id=job_run.tenant_id
+            tenant_id=job_run.tenant_id,
+            query_sql=report_version.query_sql  # If report has a base query
         )
         
         # Get pre-generation validation rules
@@ -123,20 +133,19 @@ def execute_report_task(job_run_id: str):
         
         pre_gen_rules = [v.validation_rule for v in pre_gen_validations if v.validation_rule.is_active]
         
-        # Fetch source data (initial query usually comes from Python code or config)
-        # For now, we'll execute a simple query if specified in config
+        # Fetch source data using connector
         source_data = None
-        if connector and context.connector_config.get('source_query'):
-            from services.database import DatabaseService
-            results = DatabaseService.execute_query(
-                db_type=connector_type,
-                config=connector_config,
-                credentials=connector_credentials,
-                query=context.connector_config['source_query']
-            )
-            import pandas as pd
-            source_data = pd.DataFrame(results)
-            logger.info(f"Fetched {len(source_data)} rows from source")
+        if connector_instance and report_version.query_sql:
+            logger.info("Fetching data from database...")
+            try:
+                results = connector_instance.execute_query(
+                    query=report_version.query_sql,
+                    timeout=300  # 5 minute timeout
+                )
+                source_data = pd.DataFrame(results)
+                logger.info(f"Fetched {len(source_data)} rows from source")
+            finally:
+                connector_instance.disconnect()
         
         # Run pre-generation validations
         if pre_gen_rules and source_data is not None and not source_data.empty:
@@ -262,73 +271,90 @@ def execute_report_task(job_run_id: str):
                 # Use only passed data for artifact
                 final_output = post_val_result.passed_data
         
-        # Store artifact in MinIO
-        if final_output is not None:
+        # Store artifacts in MinIO (support multiple formats)
+        if final_output is not None and isinstance(final_output, pd.DataFrame):
             storage = StorageService()
             
-            # Determine output format from config
-            output_format = report_version.config.get('output_format', 'json')
-            
-            # Convert output to bytes based on format
-            if output_format == 'json':
-                import pandas as pd
-                if isinstance(final_output, pd.DataFrame):
-                    artifact_data = final_output.to_json(orient='records', date_format='iso').encode('utf-8')
-                    filename = f"report_{job_run_id}.json"
-                else:
-                    artifact_data = json.dumps(final_output).encode('utf-8')
-                    filename = f"report_{job_run_id}.json"
-            
-            elif output_format == 'csv':
-                import pandas as pd
-                if isinstance(final_output, pd.DataFrame):
-                    artifact_data = final_output.to_csv(index=False).encode('utf-8')
-                else:
-                    # Convert to DataFrame first
-                    df = pd.DataFrame(final_output)
-                    artifact_data = df.to_csv(index=False).encode('utf-8')
-                filename = f"report_{job_run_id}.csv"
-            
-            elif output_format == 'xml':
-                import pandas as pd
-                if isinstance(final_output, pd.DataFrame):
-                    artifact_data = final_output.to_xml().encode('utf-8')
-                else:
-                    df = pd.DataFrame(final_output)
-                    artifact_data = df.to_xml().encode('utf-8')
-                filename = f"report_{job_run_id}.xml"
-            
+            # Get output formats from config (can be multiple)
+            output_formats_config = report_version.config.get('output_formats', ['csv'])
+            if isinstance(output_formats_config, str):
+                output_formats = [output_formats_config]
             else:
-                # Default to JSON
-                artifact_data = json.dumps(final_output).encode('utf-8')
-                filename = f"report_{job_run_id}.json"
+                output_formats = output_formats_config
             
-            # Upload to MinIO
-            storage_uri = storage.upload_artifact(
-                bucket=settings.ARTIFACT_BUCKET,
-                filename=filename,
-                data=artifact_data,
-                metadata={
-                    'job_run_id': str(job_run_id),
-                    'report_version_id': str(report_version.id),
-                    'output_format': output_format,
-                    'execution_time': result.execution_time_seconds
-                }
-            )
+            # Create temp directory for artifacts
+            with tempfile.TemporaryDirectory() as temp_dir:
+                
+                for output_format in output_formats:
+                    try:
+                        # Generate artifact file
+                        filename = f"report_{job_run_id}.{output_format}"
+                        filepath = os.path.join(temp_dir, filename)
+                        
+                        # Generate artifact using ArtifactGenerator
+                        if output_format == 'csv':
+                            metadata = ArtifactGenerator.generate_csv(
+                                data=final_output,
+                                filepath=filepath
+                            )
+                        elif output_format == 'json':
+                            metadata = ArtifactGenerator.generate_json(
+                                data=final_output,
+                                filepath=filepath
+                            )
+                        elif output_format == 'xml':
+                            metadata = ArtifactGenerator.generate_xml(
+                                data=final_output,
+                                filepath=filepath
+                            )
+                        elif output_format == 'txt':
+                            # Tab-delimited text file
+                            metadata = ArtifactGenerator.generate_txt(
+                                data=final_output,
+                                filepath=filepath,
+                                delimiter='\t'
+                            )
+                        else:
+                            logger.warning(f"Unknown output format: {output_format}, skipping")
+                            continue
+                        
+                        # Read artifact file
+                        with open(filepath, 'rb') as f:
+                            artifact_data = f.read()
+                        
+                        # Upload to MinIO
+                        storage_uri = storage.upload_artifact(
+                            bucket=settings.ARTIFACT_BUCKET,
+                            filename=filename,
+                            data=artifact_data,
+                            metadata={
+                                'job_run_id': str(job_run_id),
+                                'report_version_id': str(report_version.id),
+                                'output_format': output_format,
+                                'execution_time': result.execution_time_seconds,
+                                'row_count': metadata['row_count'],
+                                'md5_checksum': metadata['md5_checksum']
+                            }
+                        )
+                        
+                        # Create artifact record in database
+                        artifact = models.Artifact(
+                            job_run_id=UUID(job_run_id),
+                            filename=filename,
+                            storage_uri=storage_uri,
+                            mime_type=metadata['mime_type'],
+                            size_bytes=metadata['size_bytes'],
+                            checksum_sha256=metadata['sha256_checksum']
+                        )
+                        db.add(artifact)
+                        
+                        logger.info(f"Artifact generated and stored: {filename} ({metadata['size_bytes']} bytes)")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to generate {output_format} artifact: {e}")
+                        # Continue with other formats
             
-            # Create artifact record
-            import hashlib
-            artifact = models.Artifact(
-                job_run_id=UUID(job_run_id),
-                filename=filename,
-                storage_uri=storage_uri,
-                mime_type=f'application/{output_format}',
-                size_bytes=len(artifact_data),
-                checksum_sha256=hashlib.sha256(artifact_data).hexdigest()
-            )
-            db.add(artifact)
-            
-            logger.info(f"Artifact stored: {storage_uri}")
+            db.commit()
         
         # Mark job as successful
         job_run.status = models.JobRunStatus.SUCCESS

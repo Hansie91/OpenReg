@@ -75,6 +75,14 @@ export default function Admin() {
         role_id: '',
     });
 
+    // Audit filter state
+    const [auditFilters, setAuditFilters] = useState({
+        entity_type: undefined as string | undefined,
+        action: undefined as string | undefined,
+        skip: 0,
+        limit: 50
+    });
+
     const { data: users, isLoading: usersLoading } = useQuery('admin-users', () =>
         adminAPI.listUsers().then((res) => res.data)
     );
@@ -83,13 +91,12 @@ export default function Admin() {
         adminAPI.listRoles().then((res) => res.data)
     );
 
-    const { data: auditLogs, isLoading: auditsLoading } = useQuery('admin-audit', () =>
-        adminAPI.getAuditLogs().then((res) => res.data)
+    const { data: auditData, isLoading: auditsLoading } = useQuery(['admin-audit', auditFilters], () =>
+        adminAPI.getAuditLogs(auditFilters).then((res) => res.data)
     );
 
     const displayUsers = users && users.length > 0 ? users : demoUsers;
     const displayRoles = roles && roles.length > 0 ? roles : demoRoles;
-    const displayAuditLogs = auditLogs && auditLogs.length > 0 ? auditLogs : demoAuditLogs;
 
     const tabs = [
         { id: 'users' as TabType, label: 'Users', icon: Icons.Users },
@@ -120,8 +127,8 @@ export default function Admin() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all ${activeTab === tab.id
-                                    ? 'bg-white text-gray-900 shadow-sm'
-                                    : 'text-gray-600 hover:text-gray-900'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
                             <Icon />
@@ -253,38 +260,140 @@ export default function Admin() {
                         <p className="text-sm text-gray-500">Track all actions in the system</p>
                     </div>
 
+                    {/* Filters */}
+                    <div className="card p-4 mb-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="input-label">Entity Type</label>
+                                <select
+                                    className="select text-sm"
+                                    value={auditFilters.entity_type || ''}
+                                    onChange={(e) => setAuditFilters({ ...auditFilters, entity_type: e.target.value || undefined, skip: 0 })}
+                                >
+                                    <option value="">All Types</option>
+                                    <option value="Report">Report</option>
+                                    <option value="Connector">Connector</option>
+                                    <option value="User">User</option>
+                                    <option value="ReportVersion">Report Version</option>
+                                    <option value="Mapping">Mapping</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="input-label">Action</label>
+                                <select
+                                    className="select text-sm"
+                                    value={auditFilters.action || ''}
+                                    onChange={(e) => setAuditFilters({ ...auditFilters, action: e.target.value || undefined, skip: 0 })}
+                                >
+                                    <option value="">All Actions</option>
+                                    <option value="create">Create</option>
+                                    <option value="update">Update</option>
+                                    <option value="delete">Delete</option>
+                                    <option value="execute">Execute</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="input-label">Results</label>
+                                <select
+                                    className="select text-sm"
+                                    value={auditFilters.limit}
+                                    onChange={(e) => setAuditFilters({ ...auditFilters, limit: Number(e.target.value), skip: 0 })}
+                                >
+                                    <option value="25">25 per page</option>
+                                    <option value="50">50 per page</option>
+                                    <option value="100">100 per page</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     {auditsLoading ? (
                         <div className="card p-12 text-center">
                             <div className="spinner mx-auto text-indigo-600"></div>
                         </div>
-                    ) : (
-                        <div className="table-container">
-                            <table className="table">
-                                <thead>
-                                    <tr>
-                                        <th>Action</th>
-                                        <th>User</th>
-                                        <th>Resource</th>
-                                        <th>Timestamp</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {displayAuditLogs.map((log: any) => (
-                                        <tr key={log.id}>
-                                            <td>
-                                                <span className="badge badge-info capitalize">
-                                                    {formatAction(log.action)}
-                                                </span>
-                                            </td>
-                                            <td className="text-gray-600">{log.user_email}</td>
-                                            <td>{log.resource || '—'}</td>
-                                            <td className="text-gray-500">
-                                                {new Date(log.timestamp).toLocaleString()}
-                                            </td>
+                    ) : auditData && auditData.data && auditData.data.length > 0 ? (
+                        <>
+                            <div className="table-container">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Action</th>
+                                            <th>Entity</th>
+                                            <th>User</th>
+                                            <th>Timestamp</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {auditData.data.map((log: any) => (
+                                            <tr key={log.id}>
+                                                <td>
+                                                    <span className={`badge ${log.action === 'create' ? 'badge-success' :
+                                                        log.action === 'delete' ? 'badge-danger' :
+                                                            log.action === 'execute' ? 'badge-info' :
+                                                                'badge-warning'
+                                                        } capitalize`}>
+                                                        {log.action}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div>
+                                                        <p className="font-medium text-gray-900">{log.entity_type}</p>
+                                                        {log.entity_id && (
+                                                            <p className="text-xs text-gray-500 font-mono">{log.entity_id.substring(0, 8)}...</p>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="text-gray-600">
+                                                    {log.user_email || 'System'}
+                                                    {log.user_name && (
+                                                        <p className="text-xs text-gray-500">{log.user_name}</p>
+                                                    )}
+                                                </td>
+                                                <td className="text-gray-500 text-sm">
+                                                    {new Date(log.created_at).toLocaleString()}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Pagination */}
+                            <div className="card p-4 mt-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm text-gray-600">
+                                        Showing {auditFilters.skip + 1} to {Math.min(auditFilters.skip + auditFilters.limit, auditData.total)} of {auditData.total} results
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setAuditFilters({ ...auditFilters, skip: Math.max(0, auditFilters.skip - auditFilters.limit) })}
+                                            disabled={auditFilters.skip === 0}
+                                            className="btn btn-secondary btn-sm"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            onClick={() => setAuditFilters({ ...auditFilters, skip: auditFilters.skip + auditFilters.limit })}
+                                            disabled={auditFilters.skip + auditFilters.limit >= auditData.total}
+                                            className="btn btn-secondary btn-sm"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="empty-state">
+                            <div className="text-gray-300 mx-auto">
+                                <Icons.Clock />
+                            </div>
+                            <h3 className="empty-state-title">No audit logs yet</h3>
+                            <p className="empty-state-description">
+                                Activity will appear here as actions are performed in the system
+                            </p>
                         </div>
                     )}
                 </div>

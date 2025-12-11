@@ -3,9 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
+from sqlalchemy import func
 
 from database import get_db
 from services.auth import get_current_user
@@ -28,24 +29,75 @@ class JobRunResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("", response_model=List[JobRunResponse])
+@router.get("", response_model=Dict[str, Any])
 async def list_runs(
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
+    report_id: Optional[UUID] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List job runs for the current tenant"""
+    """List job runs for the current tenant with filtering"""
     query = db.query(models.JobRun).filter(
         models.JobRun.tenant_id == current_user.tenant_id
-    ).order_by(models.JobRun.created_at.desc())
+    )
     
+    # Apply filters
     if status:
         query = query.filter(models.JobRun.status == status)
     
-    runs = query.offset(skip).limit(limit).all()
-    return runs
+    if report_id:
+        # Get all versions of the report
+        version_ids = db.query(models.ReportVersion.id).filter(
+            models.ReportVersion.report_id == report_id
+        ).all()
+        version_ids = [v[0] for v in version_ids]
+        query = query.filter(models.JobRun.report_version_id.in_(version_ids))
+    
+    if from_date:
+        query = query.filter(models.JobRun.created_at >= from_date)
+    
+    if to_date:
+        query = query.filter(models.JobRun.created_at <= to_date)
+    
+    # Get total count
+    total_count = query.count()
+    
+    # Execute with pagination
+    runs = query.order_by(models.JobRun.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Enrich with report names
+    results = []
+    for run in runs:
+        version = db.query(models.ReportVersion).filter(
+            models.ReportVersion.id == run.report_version_id
+        ).first()
+        report = db.query(models.Report).filter(
+            models.Report.id == version.report_id
+        ).first() if version else None
+        
+        results.append({
+            "id": run.id,
+            "report_id": report.id if report else None,
+            "report_name": report.name if report else "Unknown",
+            "report_version_id": run.report_version_id,
+            "triggered_by": run.triggered_by.value,
+            "status": run.status.value,
+            "started_at": run.started_at,
+            "ended_at": run.ended_at,
+            "error_message": run.error_message,
+            "created_at": run.created_at
+        })
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "data": results
+    }
 
 
 @router.get("/{run_id}", response_model=JobRunResponse)
@@ -103,6 +155,95 @@ async def list_run_artifacts(
     return run.artifacts
 
 
+@router.get("/{run_id}/details")
+async def get_run_details(
+    run_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a job run including validation results and artifacts"""
+    run = db.query(models.JobRun).filter(
+        models.JobRun.id == run_id,
+        models.JobRun.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Job run not found")
+    
+    # Get report information
+    version = db.query(models.ReportVersion).filter(
+        models.ReportVersion.id == run.report_version_id
+    ).first()
+    
+    report = None
+    if version:
+        report = db.query(models.Report).filter(
+            models.Report.id == version.report_id
+        ).first()
+    
+    # Get validation results
+    validation_results = db.query(models.ValidationResult).filter(
+        models.ValidationResult.job_run_id == run_id
+    ).all()
+    
+    validation_summary = {
+        "total": len(validation_results),
+        "passed": sum(1 for v in validation_results if v.passed),
+        "failed": sum(1 for v in validation_results if not v.passed),
+        "details": [{
+            "rule_id": str(vr.validation_rule_id),
+            "passed": vr.passed,
+            "failed_count": vr.failed_count,
+            "warning_count": vr.warning_count,
+            "exception_count": vr.exception_count,
+            "execution_time_ms": vr.execution_time_ms,
+            "error_message": vr.error_message
+        } for vr in validation_results]
+    }
+    
+    # Get artifacts
+    artifacts = db.query(models.Artifact).filter(
+        models.Artifact.job_run_id == run_id
+    ).all()
+    
+    artifact_list = [{
+        "id": str(a.id),
+        "filename": a.filename,
+        "storage_uri": a.storage_uri,
+        "mime_type": a.mime_type,
+        "size_bytes": a.size_bytes,
+        "checksum_sha256": a.checksum_sha256,
+        "created_at": a.created_at
+    } for a in artifacts]
+    
+    # Calculate duration
+    duration = None
+    if run.started_at and run.ended_at:
+        duration = (run.ended_at - run.started_at).total_seconds()
+    
+    return {
+        "id": run.id,
+        "report": {
+            "id": str(report.id) if report else None,
+            "name": report.name if report else "Unknown"
+        },
+        "version_number": version.version_number if version else None,
+        "triggered_by": run.triggered_by.value,
+        "status": run.status.value,
+        "parameters": run.parameters,
+        "timeline": {
+            "created_at": run.created_at,
+            "started_at": run.started_at,
+            "ended_at": run.ended_at,
+            "duration_seconds": duration
+        },
+        "validation_results": validation_summary,
+        "artifacts": artifact_list,
+        "error_message": run.error_message,
+        "logs_uri": run.logs_uri
+    }
+
+
 # TODO: Implement
 # - GET /{run_id}/artifacts/{artifact_id}/download - Download artifact
-# POST /{run_id}/rerun - Rerun job
+# - POST /{run_id}/rerun - Rerun job

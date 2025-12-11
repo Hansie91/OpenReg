@@ -345,8 +345,188 @@ async def execute_report(
     }
 
 
+# === Execution History & Statistics ===
+
+@router.get("/{report_id}/executions")
+async def list_report_executions(
+    report_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all job runs for a specific report with filtering"""
+    # Verify report exists and belongs to tenant
+    report = db.query(models.Report).filter(
+        models.Report.id == report_id,
+        models.Report.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Get all versions of this report
+    version_ids = db.query(models.ReportVersion.id).filter(
+        models.ReportVersion.report_id == report_id
+    ).all()
+    version_ids = [v[0] for v in version_ids]
+    
+    # Query job runs for these versions
+    query = db.query(models.JobRun).filter(
+        models.JobRun.report_version_id.in_(version_ids)
+    )
+    
+    # Apply filters
+    if status:
+        query = query.filter(models.JobRun.status == status)
+    
+    if from_date:
+        query = query.filter(models.JobRun.created_at >= from_date)
+    
+    if to_date:
+        query = query.filter(models.JobRun.created_at <= to_date)
+    
+    # Get total count
+    total_count = query.count()
+    
+    # Execute with pagination
+    runs = query.order_by(
+        models.JobRun.created_at.desc()
+    ).offset(skip).limit(limit).all()
+    
+    # Format response with additional details
+    results = []
+    for run in runs:
+        duration = None
+        if run.started_at and run.ended_at:
+            duration = (run.ended_at - run.started_at).total_seconds()
+        
+        artifact_count = db.query(models.Artifact).filter(
+            models.Artifact.job_run_id == run.id
+        ).count()
+        
+        results.append({
+            "id": run.id,
+            "report_version_id": run.report_version_id,
+            "status": run.status.value,
+            "triggered_by": run.triggered_by.value,
+            "created_at": run.created_at,
+            "started_at": run.started_at,
+            "ended_at": run.ended_at,
+            "duration_seconds": duration,
+            "artifact_count": artifact_count,
+            "error_message": run.error_message
+        })
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "data": results
+    }
+
+
+@router.get("/{report_id}/stats")
+async def get_report_stats(
+    report_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get execution statistics for a report"""
+    # Verify report exists and belongs to tenant
+    report = db.query(models.Report).filter(
+        models.Report.id == report_id,
+        models.Report.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Get all versions of this report
+    version_ids = db.query(models.ReportVersion.id).filter(
+        models.ReportVersion.report_id == report_id
+    ).all()
+    version_ids = [v[0] for v in version_ids]
+    
+    # Total executions
+    total_executions = db.query(models.JobRun).filter(
+        models.JobRun.report_version_id.in_(version_ids)
+    ).count()
+    
+    # Count by status
+    status_counts = db.query(
+        models.JobRun.status,
+        func.count(models.JobRun.id).label('count')
+    ).filter(
+        models.JobRun.report_version_id.in_(version_ids)
+    ).group_by(models.JobRun.status).all()
+    
+    by_status = {status.value: count for status, count in status_counts}
+    
+    # Success rate
+    success_count = by_status.get('success', 0)
+    success_rate = (success_count / total_executions * 100) if total_executions > 0 else 0
+    
+    # Average execution duration
+    completed_runs = db.query(models.JobRun).filter(
+        models.JobRun.report_version_id.in_(version_ids),
+        models.JobRun.started_at.isnot(None),
+        models.JobRun.ended_at.isnot(None)
+    ).all()
+    
+    durations = [(run.ended_at - run.started_at).total_seconds() for run in completed_runs]
+    avg_duration = sum(durations) / len(durations) if durations else 0
+    
+    # Last 30 days trend
+    from datetime import timedelta
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    
+    recent_runs = db.query(
+        func.date(models.JobRun.created_at).label('date'),
+        models.JobRun.status,
+        func.count(models.JobRun.id).label('count')
+    ).filter(
+        models.JobRun.report_version_id.in_(version_ids),
+        models.JobRun.created_at >= thirty_days_ago
+    ).group_by(
+        func.date(models.JobRun.created_at),
+        models.JobRun.status
+    ).all()
+    
+    trend_data = {}
+    for date, status, count in recent_runs:
+        date_str = date.isoformat()
+        if date_str not in trend_data:
+            trend_data[date_str] = {}
+        trend_data[date_str][status.value] = count
+    
+    # Last execution
+    last_run = db.query(models.JobRun).filter(
+        models.JobRun.report_version_id.in_(version_ids)
+    ).order_by(models.JobRun.created_at.desc()).first()
+    
+    last_execution = None
+    if last_run:
+        last_execution = {
+            "status": last_run.status.value,
+            "created_at": last_run.created_at,
+            "error_message": last_run.error_message
+        }
+    
+    return {
+        "total_executions": total_executions,
+        "by_status": by_status,
+        "success_rate": round(success_rate, 2),
+        "avg_duration_seconds": round(avg_duration, 2),
+        "last_30_days_trend": trend_data,
+        "last_execution": last_execution
+    }
+
+
 # TODO: Additional endpoints for v1
 # - GET /{report_id}/versions/{version_id} - Get specific version details
 # - POST /{report_id}/clone - Clone a report
 # - GET /{report_id}/schedule - Get report schedule
-# - GET /{report_id}/runs - Get execution history for report

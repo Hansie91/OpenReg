@@ -1,5 +1,5 @@
 import { useQuery } from 'react-query';
-import { runsAPI } from '../services/api';
+import { runsAPI, reportsAPI } from '../services/api';
 import { useState } from 'react';
 
 interface Run {
@@ -67,18 +67,34 @@ const getStatusBadge = (status: string) => {
 };
 
 export default function Runs() {
-    const [showLogsModal, setShowLogsModal] = useState(false);
-    const [selectedRun, setSelectedRun] = useState<Run | null>(null);
-    const [filter, setFilter] = useState('all');
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+    const [filters, setFilters] = useState({
+        status: '',
+        report_id: '',
+        skip: 0,
+        limit: 50
+    });
 
-    const { data: runs, isLoading, refetch } = useQuery('runs', () =>
-        runsAPI.list().then((res) => res.data)
+    // Fetch runs with filters
+    const { data: runsData, isLoading, refetch } = useQuery(
+        ['runs', filters],
+        () => runsAPI.list(filters).then((res) => res.data)
     );
 
-    const filteredRuns = runs?.filter((run: Run) => {
-        if (filter === 'all') return true;
-        return run.status === filter;
-    });
+    // Fetch reports for filter dropdown
+    const { data: reports } = useQuery('reports', () =>
+        reportsAPI.list().then((res) => res.data)
+    );
+
+    // Fetch detailed run information when modal is open
+    const { data: runDetails } = useQuery(
+        ['run-details', selectedRunId],
+        () => selectedRunId ? runsAPI.getDetails(selectedRunId).then((res) => res.data) : null,
+        { enabled: !!selectedRunId }
+    );
+
+    const runs = runsData?.data || [];
 
     const getDuration = (run: Run) => {
         if (!run.started_at) return '-';
@@ -90,9 +106,9 @@ export default function Runs() {
         return `${minutes}m ${seconds % 60}s`;
     };
 
-    const viewLogs = (run: Run) => {
-        setSelectedRun(run);
-        setShowLogsModal(true);
+    const viewDetails = (runId: string) => {
+        setSelectedRunId(runId);
+        setShowDetailsModal(true);
     };
 
     return (
@@ -112,19 +128,50 @@ export default function Runs() {
             </div>
 
             {/* Filters */}
-            <div className="flex gap-2 mb-6">
-                {['all', 'success', 'failed', 'running', 'pending'].map((f) => (
-                    <button
-                        key={f}
-                        onClick={() => setFilter(f)}
-                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${filter === f
-                                ? 'bg-indigo-100 text-indigo-700'
-                                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                            }`}
-                    >
-                        {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                ))}
+            <div className="card p-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label className="input-label">Report</label>
+                        <select
+                            className="select text-sm"
+                            value={filters.report_id}
+                            onChange={(e) => setFilters({ ...filters, report_id: e.target.value, skip: 0 })}
+                        >
+                            <option value="">All Reports</option>
+                            {reports?.map((r: any) => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="input-label">Status</label>
+                        <select
+                            className="select text-sm"
+                            value={filters.status}
+                            onChange={(e) => setFilters({ ...filters, status: e.target.value, skip: 0 })}
+                        >
+                            <option value="">All Statuses</option>
+                            <option value="success">Success</option>
+                            <option value="failed">Failed</option>
+                            <option value="running">Running</option>
+                            <option value="pending">Pending</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="input-label">Results</label>
+                        <select
+                            className="select text-sm"
+                            value={filters.limit}
+                            onChange={(e) => setFilters({ ...filters, limit: Number(e.target.value), skip: 0 })}
+                        >
+                            <option value="25">25 per page</option>
+                            <option value="50">50 per page</option>
+                            <option value="100">100 per page</option>
+                        </select>
+                    </div>
+                </div>
             </div>
 
             {/* Runs Table */}
@@ -133,12 +180,12 @@ export default function Runs() {
                     <div className="spinner mx-auto text-indigo-600"></div>
                     <p className="mt-3 text-sm text-gray-500">Loading runs...</p>
                 </div>
-            ) : filteredRuns && filteredRuns.length > 0 ? (
+            ) : runs && runs.length > 0 ? (
                 <div className="table-container">
                     <table className="table">
                         <thead>
                             <tr>
-                                <th>Run ID</th>
+                                <th>Report</th>
                                 <th>Status</th>
                                 <th>Triggered By</th>
                                 <th>Started</th>
@@ -147,40 +194,35 @@ export default function Runs() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredRuns.map((run: Run) => (
+                            {runs.map((run: any) => (
                                 <tr key={run.id}>
-                                    <td className="font-mono text-sm">{run.id.slice(0, 8)}...</td>
+                                    <td>
+                                        <p className="font-medium text-gray-900">{run.report_name}</p>
+                                        <p className="text-xs text-gray-500 font-mono">{run.id.slice(0, 8)}...</p>
+                                    </td>
                                     <td>{getStatusBadge(run.status)}</td>
                                     <td className="capitalize">{run.triggered_by}</td>
-                                    <td className="text-gray-500">
+                                    <td className="text-gray-500 text-sm">
                                         {run.started_at
                                             ? new Date(run.started_at).toLocaleString()
                                             : new Date(run.created_at).toLocaleString()
                                         }
                                     </td>
-                                    <td>{getDuration(run)}</td>
+                                    <td className="text-gray-600">
+                                        {run.started_at && run.ended_at
+                                            ? `${((new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
+                                            : '—'
+                                        }
+                                    </td>
                                     <td>
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => viewLogs(run)}
-                                                className="btn btn-ghost btn-icon text-gray-600"
-                                                title="View Logs"
-                                            >
-                                                <Icons.Eye />
-                                            </button>
-                                            <button
-                                                className="btn btn-ghost btn-icon text-indigo-600"
-                                                title="Download Artifacts"
-                                            >
-                                                <Icons.Download />
-                                            </button>
-                                            <button
-                                                className="btn btn-ghost btn-icon text-emerald-600"
-                                                title="Re-run"
-                                            >
-                                                <Icons.Play />
-                                            </button>
-                                        </div>
+                                        <button
+                                            onClick={() => viewDetails(run.id)}
+                                            className="btn btn-secondary btn-sm"
+                                            title="View Details"
+                                        >
+                                            <Icons.Eye />
+                                            <span className="ml-1.5">Details</span>
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -199,70 +241,122 @@ export default function Runs() {
                 </div>
             )}
 
-            {/* Logs Modal */}
-            {showLogsModal && selectedRun && (
-                <div className="modal-overlay" onClick={() => setShowLogsModal(false)}>
-                    <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+            {/* Run Details Modal */}
+            {showDetailsModal && selectedRunId && runDetails && (
+                <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
+                    <div className="modal modal-xl" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <div>
-                                <h3 className="modal-title">Run Details</h3>
+                                <h3 className="modal-title">{runDetails.report?.name || 'Run Details'}</h3>
                                 <p className="text-sm text-gray-500 mt-0.5 font-mono">
-                                    {selectedRun.id}
+                                    Run ID: {selectedRunId.slice(0, 16)}...
                                 </p>
                             </div>
-                            <button onClick={() => setShowLogsModal(false)} className="btn btn-ghost btn-icon">
+                            <button onClick={() => setShowDetailsModal(false)} className="btn btn-ghost btn-icon">
                                 <Icons.Close />
                             </button>
                         </div>
-                        <div className="modal-body">
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                <div>
-                                    <p className="text-sm text-gray-500">Status</p>
-                                    <div className="mt-1">{getStatusBadge(selectedRun.status)}</div>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-500">Triggered By</p>
-                                    <p className="capitalize">{selectedRun.triggered_by}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-500">Started</p>
-                                    <p>{selectedRun.started_at ? new Date(selectedRun.started_at).toLocaleString() : '-'}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-500">Duration</p>
-                                    <p>{getDuration(selectedRun)}</p>
+
+                        <div className="modal-body space-y-6">
+                            {/* Execution Timeline */}
+                            <div>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-3">Execution Timeline</h4>
+                                <div className="grid grid-cols-4 gap-4">
+                                    <div className="card p-3">
+                                        <p className="text-xs text-gray-500">Status</p>
+                                        <div className="mt-1">{getStatusBadge(runDetails.status)}</div>
+                                    </div>
+                                    <div className="card p-3">
+                                        <p className="text-xs text-gray-500">Triggered By</p>
+                                        <p className="text-sm font-medium capitalize">{runDetails.triggered_by}</p>
+                                    </div>
+                                    <div className="card p-3">
+                                        <p className="text-xs text-gray-500">Duration</p>
+                                        <p className="text-sm font-medium">
+                                            {runDetails.timeline?.duration_seconds
+                                                ? `${runDetails.timeline.duration_seconds.toFixed(1)}s`
+                                                : '—'
+                                            }
+                                        </p>
+                                    </div>
+                                    <div className="card p-3">
+                                        <p className="text-xs text-gray-500">Created</p>
+                                        <p className="text-sm font-medium">
+                                            {new Date(runDetails.timeline.created_at).toLocaleString()}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
-                            {selectedRun.error_message && (
-                                <div className="mb-6">
-                                    <p className="text-sm text-gray-500 mb-2">Error Message</p>
-                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-                                        {selectedRun.error_message}
+                            {/* Validation Results */}
+                            {runDetails.validation_results && runDetails.validation_results.total > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Validation Results</h4>
+                                    <div className="grid grid-cols-3 gap-4 mb-4">
+                                        <div className="card p-3">
+                                            <p className="text-xs text-gray-500">Total Rules</p>
+                                            <p className="text-xl font-bold text-gray-900">
+                                                {runDetails.validation_results.total}
+                                            </p>
+                                        </div>
+                                        <div className="card p-3">
+                                            <p className="text-xs text-gray-500">Passed</p>
+                                            <p className="text-xl font-bold text-emerald-600">
+                                                {runDetails.validation_results.passed}
+                                            </p>
+                                        </div>
+                                        <div className="card p-3">
+                                            <p className="text-xs text-gray-500">Failed</p>
+                                            <p className="text-xl font-bold text-red-600">
+                                                {runDetails.validation_results.failed}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
 
-                            <div>
-                                <p className="text-sm text-gray-500 mb-2">Logs</p>
-                                <div className="bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-300 h-64 overflow-auto">
-                                    <p className="text-gray-500"># Logs loading...</p>
-                                    <p className="text-green-400">[INFO] Starting report execution</p>
-                                    <p className="text-green-400">[INFO] Connecting to database...</p>
-                                    <p className="text-green-400">[INFO] Executing query...</p>
-                                    <p className="text-green-400">[INFO] Processing 1,234 rows</p>
-                                    <p className="text-green-400">[INFO] Generating output file...</p>
-                                    <p className="text-green-400">[INFO] Execution completed</p>
+                            {/* Artifacts */}
+                            {runDetails.artifacts && runDetails.artifacts.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Artifacts</h4>
+                                    <div className="space-y-2">
+                                        {runDetails.artifacts.map((artifact: any) => (
+                                            <div key={artifact.id} className="card p-4 flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-indigo-600">
+                                                        <Icons.Document />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium text-gray-900">{artifact.filename}</p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {artifact.mime_type} • {(artifact.size_bytes / 1024).toFixed(1)} KB
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button className="btn btn-secondary btn-sm">
+                                                    <Icons.Download />
+                                                    <span className="ml-1.5">Download</span>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* Error Message */}
+                            {runDetails.error_message && (
+                                <div>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Error Details</h4>
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+                                        {runDetails.error_message}
+                                    </div>
+                                </div>
+                            )}
                         </div>
+
                         <div className="modal-footer">
-                            <button onClick={() => setShowLogsModal(false)} className="btn btn-secondary">
+                            <button onClick={() => setShowDetailsModal(false)} className="btn btn-secondary">
                                 Close
-                            </button>
-                            <button className="btn btn-primary">
-                                <Icons.Download />
-                                <span className="ml-1">Download Artifacts</span>
                             </button>
                         </div>
                     </div>
