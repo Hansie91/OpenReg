@@ -21,13 +21,18 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle 401 responses
+// Handle 401// Response interceptor
 api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
+            // Session expired or unauthorized
             localStorage.removeItem('auth-storage');
-            window.location.href = '/login';
+
+            // Only redirect if not already on login page
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }
@@ -91,7 +96,8 @@ export const mappingsAPI = {
     createSet: (data: any) => api.post('/mappings', data),
     updateSet: (id: string, data: any) => api.put(`/mappings/${id}`, data),
     deleteSet: (id: string) => api.delete(`/mappings/${id}`),
-    listEntries: (setId: string) => api.get(`/mappings/${setId}/entries`),
+    listEntries: (setId: string, params?: { search?: string; sort_by?: string; sort_order?: string }) =>
+        api.get(`/mappings/${setId}/entries`, { params }),
     createEntry: (setId: string, data: any) => api.post(`/mappings/${setId}/entries`, data),
     updateEntry: (setId: string, entryId: string, data: any) =>
         api.put(`/mappings/${setId}/entries/${entryId}`, data),
@@ -122,9 +128,8 @@ export const schedulesAPI = {
     get: (id: string) => api.get(`/schedules/${id}`),
     create: (data: any) => api.post('/schedules', data),
     update: (id: string, data: any) => api.put(`/schedules/${id}`, data),
+    toggle: (id: string) => api.put(`/schedules/${id}/toggle`),
     delete: (id: string) => api.delete(`/schedules/${id}`),
-    toggle: (id: string, active: boolean) =>
-        api.patch(`/schedules/${id}`, { is_active: active }),
 };
 
 // Destinations API

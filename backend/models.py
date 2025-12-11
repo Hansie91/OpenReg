@@ -5,13 +5,14 @@ This module defines all SQLAlchemy ORM models for the application.
 Models are organized logically by domain.
 """
 
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum, BigInteger, Date, JSON, LargeBinary
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum, BigInteger, Date, JSON, LargeBinary, Table
+from sqlalchemy.dialects.postgresql import UUID, JSONB 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from datetime import datetime, date as date_type
 import uuid
 import enum
-from backend.database import Base
+from database import Base
 
 
 # === Enums ===
@@ -244,6 +245,16 @@ class ReportValidation(Base):
 
 # === Cross-Reference / Mappings ===
 
+# Association table for many-to-many relationship between entries and reports
+mapping_entry_reports = Table(
+    'mapping_entry_reports',
+    Base.metadata,
+    Column('entry_id', UUID(as_uuid=True), ForeignKey('cross_reference_entries.id'), primary_key=True),
+    Column('report_id', UUID(as_uuid=True), ForeignKey('reports.id'), primary_key=True),
+    Column('created_at', DateTime, default=datetime.utcnow)
+)
+
+
 class MappingSet(Base, TimestampMixin):
     __tablename__ = "mapping_sets"
     
@@ -271,6 +282,7 @@ class CrossReferenceEntry(Base, TimestampMixin):
     
     # Relationships
     mapping_set = relationship("MappingSet", back_populates="entries")
+    reports = relationship("Report", secondary=mapping_entry_reports, backref="mapping_entries")
 
 
 # === Validations ===
@@ -334,21 +346,8 @@ class ValidationException(Base, TimestampMixin):
     validation_rule = relationship("ValidationRule", back_populates="exceptions")
 
 
-class ReportValidation(Base, TimestampMixin):
-    __tablename__ = "report_validations"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    report_version_id = Column(UUID(as_uuid=True), ForeignKey("report_versions.id"), nullable=False, index=True)
-    validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
-    execution_phase = Column(Enum(ExecutionPhase), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    report_version = relationship("ReportVersion")
-    validation_rule = relationship("ValidationRule", back_populates="reports")
-
-
 # === Scheduling ===
+
 
 class Schedule(Base, TimestampMixin):
     __tablename__ = "schedules"
@@ -356,15 +355,19 @@ class Schedule(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id"), nullable=False, index=True)
-    name = Column(String(255), nullable=True)
+    name = Column(String(255), nullable=False)
     schedule_type = Column(Enum(ScheduleType), nullable=False)
     cron_expression = Column(String(100), nullable=True)
     calendar_config = Column(JSONB, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     next_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_run_status = Column(String(50), nullable=True)
+    parameters = Column(JSONB, default={}, nullable=True)
     
     # Relationships
     report = relationship("Report", back_populates="schedules")
+
 
 
 class Trigger(Base, TimestampMixin):

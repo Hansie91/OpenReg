@@ -32,17 +32,22 @@ const Icons = {
 };
 
 export default function Dashboard() {
-    const { data: runs, isLoading: runsLoading } = useQuery('recent-runs', () =>
+    const { data: runsResponse, isLoading: runsLoading } = useQuery('recent-runs', () =>
         runsAPI.list().then((res) => res.data)
     );
 
-    const { data: reports } = useQuery('reports-count', () =>
+    const { data: reportsResponse } = useQuery('reports-count', () =>
         reportsAPI.list().then((res) => res.data)
     );
 
-    const { data: connectors } = useQuery('connectors-count', () =>
+    const { data: connectorsResponse } = useQuery('connectors-count', () =>
         connectorsAPI.list().then((res) => res.data)
     );
+
+    // Extract actual data arrays from response objects
+    const runs = runsResponse?.data || [];
+    const reports = reportsResponse?.data || reportsResponse || [];
+    const connectors = connectorsResponse?.data || connectorsResponse || [];
 
     const stats = [
         {

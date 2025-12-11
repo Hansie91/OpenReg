@@ -81,7 +81,9 @@ const cronPresets = [
 ];
 
 export default function Schedules() {
+    const queryClient = useQueryClient();
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [deleteConfirmSchedule, setDeleteConfirmSchedule] = useState<any>(null);
     const [formData, setFormData] = useState({
         name: '',
         report_id: '',
@@ -97,7 +99,42 @@ export default function Schedules() {
         reportsAPI.list().then((res) => res.data)
     );
 
-    const displaySchedules = schedules && schedules.length > 0 ? schedules : demoSchedules;
+    const createMutation = useMutation(
+        (data: any) => schedulesAPI.create(data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('schedules');
+                setShowCreateModal(false);
+                setFormData({ name: '', report_id: '', schedule_type: 'cron', cron_expression: '0 6 * * *' });
+            },
+        }
+    );
+
+    const toggleMutation = useMutation(
+        (id: string) => schedulesAPI.toggle(id),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('schedules');
+            },
+        }
+    );
+
+    const deleteMutation = useMutation(
+        (id: string) => schedulesAPI.delete(id),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('schedules');
+            },
+        }
+    );
+
+    const handleSubmit = () => {
+        if (!formData.name || !formData.report_id) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        createMutation.mutate(formData);
+    };
 
     const formatNextRun = (dateStr: string | null) => {
         if (!dateStr) return '—';
@@ -136,7 +173,7 @@ export default function Schedules() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold text-gray-900">
-                            {displaySchedules.filter((s: any) => s.is_active).length}
+                            {schedules?.filter((s: any) => s.is_active).length || 0}
                         </p>
                         <p className="text-sm text-gray-500">Active Schedules</p>
                     </div>
@@ -147,7 +184,7 @@ export default function Schedules() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold text-gray-900">
-                            {formatNextRun(displaySchedules.find((s: any) => s.is_active)?.next_run_at)}
+                            {formatNextRun(schedules?.find((s: any) => s.is_active)?.next_run_at || null)}
                         </p>
                         <p className="text-sm text-gray-500">Next Scheduled Run</p>
                     </div>
@@ -159,9 +196,9 @@ export default function Schedules() {
                 <div className="card p-12 text-center">
                     <div className="spinner mx-auto text-indigo-600"></div>
                 </div>
-            ) : (
+            ) : schedules && schedules.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {displaySchedules.map((schedule: any) => (
+                    {schedules.map((schedule: any) => (
                         <div key={schedule.id} className="card">
                             <div className="p-6">
                                 <div className="flex items-center justify-between">
@@ -189,7 +226,7 @@ export default function Schedules() {
                                 )}
                             </div>
                             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2">
-                                <button className="btn btn-ghost text-sm flex-1">
+                                <button onClick={() => toggleMutation.mutate(schedule.id)} className="btn btn-ghost text-sm flex-1">
                                     {schedule.is_active ? (
                                         <>
                                             <Icons.Pause />
@@ -202,12 +239,18 @@ export default function Schedules() {
                                         </>
                                     )}
                                 </button>
-                                <button className="btn btn-ghost text-red-600 hover:bg-red-50">
+                                <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmSchedule(schedule); }} className="btn btn-ghost text-red-600 hover:bg-red-50" title="Delete schedule">
                                     <Icons.Trash />
                                 </button>
                             </div>
                         </div>
                     ))}
+                </div>
+            ) : (
+                <div className="card p-12 text-center">
+                    <Icons.Calendar />
+                    <h3 className="mt-4 text-lg font-medium text-gray-900">No schedules yet</h3>
+                    <p className="mt-2 text-sm text-gray-500">Get started by creating your first schedule</p>
                 </div>
             )}
 
@@ -266,8 +309,8 @@ export default function Schedules() {
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, cron_expression: preset.value })}
                                                 className={`px-3 py-1.5 text-xs rounded-lg border ${formData.cron_expression === preset.value
-                                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                                                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                                                     }`}
                                             >
                                                 {preset.label}
@@ -289,8 +332,45 @@ export default function Schedules() {
                             <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary">
                                 Cancel
                             </button>
-                            <button className="btn btn-primary">
-                                Create Schedule
+                            <button onClick={handleSubmit} disabled={createMutation.isLoading} className="btn btn-primary">
+                                {createMutation.isLoading ? 'Creating...' : 'Create Schedule'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirmSchedule && (
+                <div className="modal-overlay" onClick={() => setDeleteConfirmSchedule(null)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Confirm Delete</h3>
+                            <button onClick={() => setDeleteConfirmSchedule(null)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete this schedule?</p>
+                            <div className="mt-4 p-3 bg-gray-50 rounded">
+                                <div className="text-sm font-medium">{deleteConfirmSchedule.name}</div>
+                                <div className="text-sm text-gray-500 mt-1">
+                                    Report: {deleteConfirmSchedule.report_name}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setDeleteConfirmSchedule(null)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    deleteMutation.mutate(deleteConfirmSchedule.id);
+                                    setDeleteConfirmSchedule(null);
+                                }}
+                                className="btn btn-danger bg-red-600 hover:bg-red-700"
+                            >
+                                Delete
                             </button>
                         </div>
                     </div>

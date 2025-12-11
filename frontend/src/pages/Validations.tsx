@@ -103,6 +103,41 @@ export default function Validations() {
         validationsAPI.list().then((res) => res.data)
     );
 
+    const createMutation = useMutation(
+        (data: any) => validationsAPI.create(data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('validations');
+                setShowCreateModal(false);
+                setFormData({
+                    name: '',
+                    description: '',
+                    rule_type: 'sql',
+                    expression: '',
+                    severity: 'blocking',
+                    error_message: '',
+                });
+            },
+        }
+    );
+
+    const deleteMutation = useMutation(
+        (id: string) => validationsAPI.delete(id),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('validations');
+            },
+        }
+    );
+
+    const handleSubmit = () => {
+        if (!formData.name || !formData.expression || !formData.error_message) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        createMutation.mutate(formData);
+    };
+
     const displayRules = rules && rules.length > 0 ? rules : demoRules;
 
     return (
@@ -284,8 +319,8 @@ export default function Validations() {
                             <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary">
                                 Cancel
                             </button>
-                            <button className="btn btn-primary">
-                                Create Rule
+                            <button onClick={handleSubmit} className="btn btn-primary" disabled={createMutation.isLoading}>
+                                {createMutation.isLoading ? 'Creating...' : 'Create Rule'}
                             </button>
                         </div>
                     </div>
