@@ -77,6 +77,14 @@ export const connectorsAPI = {
     update: (id: string, data: any) => api.put(`/connectors/${id}`, data),
     delete: (id: string) => api.delete(`/connectors/${id}`),
     test: (data: any) => api.post('/connectors/test', data),
+    testExisting: (id: string) => api.post(`/connectors/${id}/test`),
+    // Schema discovery
+    getTables: (id: string, schema?: string) =>
+        api.get(`/connectors/${id}/tables`, { params: { schema_name: schema } }),
+    getColumns: (id: string, table: string, schema?: string) =>
+        api.get(`/connectors/${id}/columns`, { params: { table, schema_name: schema } }),
+    preview: (id: string, table: string, schema?: string, limit: number = 10) =>
+        api.get(`/connectors/${id}/preview`, { params: { table, schema_name: schema, limit } }),
 };
 
 // Runs API
@@ -153,4 +161,34 @@ export const adminAPI = {
     listRoles: () => api.get('/admin/roles'),
     getAuditLogs: (params?: any) => api.get('/admin/audit', { params }),
     getAuditStats: () => api.get('/admin/audit/stats'),
+};
+
+// Schemas API (XSD Management)
+export const schemasAPI = {
+    list: () => api.get('/schemas'),
+    get: (id: string) => api.get(`/schemas/${id}`),
+    create: (data: { name: string; description?: string; version?: string; xsd_content: string }) =>
+        api.post('/schemas', data),
+    upload: (file: File, name: string, description?: string, version?: string) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('name', name);
+        if (description) formData.append('description', description);
+        if (version) formData.append('version', version);
+        return api.post('/schemas/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+    },
+    delete: (id: string) => api.delete(`/schemas/${id}`),
+    getElements: (id: string, flat: boolean = true) =>
+        api.get(`/schemas/${id}/elements`, { params: { flat } }),
+    validate: (id: string, xml_content: string) =>
+        api.post(`/schemas/${id}/validate`, { xml_content }),
+    parsePreview: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/schemas/parse-preview', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+    },
 };

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { reportsAPI, connectorsAPI } from '../services/api';
 import Editor from '@monaco-editor/react';
+import ReportWizard from '../components/ReportWizard';
 
 interface Report {
     id: string;
@@ -92,6 +93,7 @@ def transform(db, mappings, params):
 
 export default function Reports() {
     const queryClient = useQueryClient();
+    const [showWizard, setShowWizard] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -218,7 +220,7 @@ export default function Reports() {
                         Manage your regulatory reports and transformation logic
                     </p>
                 </div>
-                <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+                <button onClick={() => setShowWizard(true)} className="btn btn-primary">
                     <Icons.Plus />
                     <span className="ml-2">Create Report</span>
                 </button>
@@ -363,6 +365,16 @@ export default function Reports() {
                 </div>
             )}
 
+            {/* Report Creation Wizard */}
+            <ReportWizard
+                isOpen={showWizard}
+                onClose={() => setShowWizard(false)}
+                onSuccess={() => {
+                    setShowWizard(false);
+                    queryClient.invalidateQueries('reports');
+                }}
+            />
+
             {/* Edit Report Modal with Code Editor */}
             {showEditModal && selectedReport && (
                 <div className="modal-overlay" onClick={closeEditModal}>
@@ -388,8 +400,8 @@ export default function Reports() {
                             <button
                                 onClick={() => setEditorTab('code')}
                                 className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'code'
-                                        ? 'text-indigo-600 border-b-2 border-indigo-600'
-                                        : 'text-gray-600 hover:text-gray-900'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
                                 Code Editor
@@ -397,8 +409,8 @@ export default function Reports() {
                             <button
                                 onClick={() => setEditorTab('history')}
                                 className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'history'
-                                        ? 'text-indigo-600 border-b-2 border-indigo-600'
-                                        : 'text-gray-600 hover:text-gray-900'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
                                 Execution History
@@ -519,9 +531,9 @@ export default function Reports() {
                                                         <tr key={run.id}>
                                                             <td>
                                                                 <span className={`badge ${run.status === 'success' ? 'badge-success' :
-                                                                        run.status === 'failed' ? 'badge-danger' :
-                                                                            run.status === 'running' ? 'badge-info' :
-                                                                                'badge-warning'
+                                                                    run.status === 'failed' ? 'badge-danger' :
+                                                                        run.status === 'running' ? 'badge-info' :
+                                                                            'badge-warning'
                                                                     }`}>
                                                                     {run.status}
                                                                 </span>

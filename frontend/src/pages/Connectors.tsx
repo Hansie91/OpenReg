@@ -179,21 +179,28 @@ export default function Connectors() {
         setTestLoading(true);
         setTestResult(null);
         try {
-            await connectorsAPI.test({
+            const result = await connectorsAPI.test({
                 type: formData.type,
                 config: {
                     host: formData.host,
-                    port: formData.port,
+                    port: parseInt(formData.port) || 5432,
                     database: formData.database,
+                },
+                credentials: {
                     username: formData.username,
                     password: formData.password,
-                },
+                }
             });
-            setTestResult({ success: true, message: 'Connection successful!' });
+            // Check if the API returned an error status
+            if (result.data?.status === 'error') {
+                setTestResult({ success: false, message: result.data.message || 'Connection failed' });
+            } else {
+                setTestResult({ success: true, message: 'Connection successful!' });
+            }
         } catch (err: any) {
             setTestResult({
                 success: false,
-                message: err.response?.data?.detail || 'Connection failed',
+                message: err.response?.data?.detail || err.response?.data?.message || 'Connection failed',
             });
         } finally {
             setTestLoading(false);
@@ -207,11 +214,13 @@ export default function Connectors() {
             type: formData.type,
             config: {
                 host: formData.host,
-                port: formData.port,
+                port: parseInt(formData.port) || 5432,
                 database: formData.database,
-                username: formData.username,
             },
-            credentials: formData.password ? { password: formData.password } : undefined,
+            credentials: {
+                username: formData.username,
+                password: formData.password,
+            },
         };
 
         if (editingConnector) {
@@ -336,8 +345,8 @@ export default function Connectors() {
                                             type="button"
                                             onClick={() => handleTypeChange(db.value)}
                                             className={`p-3 rounded-lg border-2 transition-all text-center ${formData.type === db.value
-                                                    ? 'border-indigo-500 bg-indigo-50'
-                                                    : 'border-gray-200 hover:border-gray-300'
+                                                ? 'border-indigo-500 bg-indigo-50'
+                                                : 'border-gray-200 hover:border-gray-300'
                                                 }`}
                                         >
                                             <span className="text-2xl">{db.icon}</span>

@@ -647,3 +647,272 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
+    
+    # ==================== Schema Discovery ====================
+    
+    @staticmethod
+    def get_tables(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str],
+        schema_filter: Optional[str] = None
+    ) -> List[Dict[str, str]]:
+        """
+        List all tables from a database connection.
+        
+        Args:
+            db_type: Database type
+            config: Connection config
+            credentials: Username and password
+            schema_filter: Optional schema/catalog filter
+            
+        Returns:
+            List of dicts with schema, name, and type (table/view)
+        """
+        with DatabaseService.get_connection(db_type, config, credentials) as conn:
+            cursor = conn.cursor()
+            
+            try:
+                if db_type == 'postgresql':
+                    query = """
+                        SELECT table_schema, table_name, table_type
+                        FROM information_schema.tables
+                        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                    """
+                    if schema_filter:
+                        query += f" AND table_schema = '{schema_filter}'"
+                    query += " ORDER BY table_schema, table_name"
+                    
+                elif db_type == 'mysql':
+                    query = """
+                        SELECT table_schema, table_name, table_type
+                        FROM information_schema.tables
+                        WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+                    """
+                    if schema_filter:
+                        query += f" AND table_schema = '{schema_filter}'"
+                    query += " ORDER BY table_schema, table_name"
+                    
+                elif db_type == 'sqlserver':
+                    query = """
+                        SELECT s.name AS table_schema, t.name AS table_name,
+                            CASE WHEN t.type = 'U' THEN 'BASE TABLE' ELSE 'VIEW' END AS table_type
+                        FROM sys.tables t
+                        JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    """
+                    if schema_filter:
+                        query += f" WHERE s.name = '{schema_filter}'"
+                    query += " ORDER BY s.name, t.name"
+                    
+                elif db_type == 'oracle':
+                    query = """
+                        SELECT owner AS table_schema, table_name, 'BASE TABLE' AS table_type
+                        FROM all_tables
+                        WHERE owner NOT IN ('SYS', 'SYSTEM', 'CTXSYS', 'MDSYS', 'OLAPSYS', 'XDB')
+                    """
+                    if schema_filter:
+                        query += f" AND owner = '{schema_filter.upper()}'"
+                    query += " ORDER BY owner, table_name"
+                    
+                else:
+                    # Generic ODBC fallback
+                    query = """
+                        SELECT table_schema, table_name, table_type
+                        FROM information_schema.tables
+                        ORDER BY table_schema, table_name
+                    """
+                
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                
+                tables = []
+                for row in rows:
+                    tables.append({
+                        "schema": row[0],
+                        "name": row[1],
+                        "type": row[2] if len(row) > 2 else "TABLE",
+                        "full_name": f"{row[0]}.{row[1]}"
+                    })
+                
+                return tables
+                
+            finally:
+                cursor.close()
+    
+    @staticmethod
+    def get_columns(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str],
+        table_name: str,
+        schema_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List all columns for a specific table.
+        
+        Args:
+            db_type: Database type
+            config: Connection config
+            credentials: Username and password
+            table_name: Name of the table
+            schema_name: Optional schema name
+            
+        Returns:
+            List of column info dicts
+        """
+        with DatabaseService.get_connection(db_type, config, credentials) as conn:
+            cursor = conn.cursor()
+            
+            try:
+                if db_type == 'postgresql':
+                    query = """
+                        SELECT 
+                            column_name, 
+                            data_type, 
+                            is_nullable,
+                            column_default,
+                            character_maximum_length,
+                            numeric_precision,
+                            ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_name = %s
+                    """
+                    params = [table_name]
+                    if schema_name:
+                        query += " AND table_schema = %s"
+                        params.append(schema_name)
+                    query += " ORDER BY ordinal_position"
+                    cursor.execute(query, params)
+                    
+                elif db_type == 'mysql':
+                    query = """
+                        SELECT 
+                            column_name, 
+                            data_type, 
+                            is_nullable,
+                            column_default,
+                            character_maximum_length,
+                            numeric_precision,
+                            ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_name = %s
+                    """
+                    params = [table_name]
+                    if schema_name:
+                        query += " AND table_schema = %s"
+                        params.append(schema_name)
+                    query += " ORDER BY ordinal_position"
+                    cursor.execute(query, params)
+                    
+                elif db_type == 'sqlserver':
+                    query = """
+                        SELECT 
+                            c.name AS column_name,
+                            t.name AS data_type,
+                            CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS is_nullable,
+                            d.definition AS column_default,
+                            c.max_length AS character_maximum_length,
+                            c.precision AS numeric_precision,
+                            c.column_id AS ordinal_position
+                        FROM sys.columns c
+                        JOIN sys.types t ON c.user_type_id = t.user_type_id
+                        JOIN sys.tables tb ON c.object_id = tb.object_id
+                        LEFT JOIN sys.default_constraints d ON c.default_object_id = d.object_id
+                        WHERE tb.name = ?
+                    """
+                    if schema_name:
+                        query += f"""
+                            AND tb.schema_id = SCHEMA_ID('{schema_name}')
+                        """
+                    query += " ORDER BY c.column_id"
+                    cursor.execute(query, (table_name,))
+                    
+                elif db_type == 'oracle':
+                    query = """
+                        SELECT 
+                            column_name,
+                            data_type,
+                            nullable AS is_nullable,
+                            data_default AS column_default,
+                            data_length AS character_maximum_length,
+                            data_precision AS numeric_precision,
+                            column_id AS ordinal_position
+                        FROM all_tab_columns
+                        WHERE table_name = :1
+                    """
+                    if schema_name:
+                        query += " AND owner = :2"
+                        cursor.execute(query, (table_name.upper(), schema_name.upper()))
+                    else:
+                        cursor.execute(query, (table_name.upper(),))
+                    query += " ORDER BY column_id"
+                    
+                else:
+                    # Generic fallback
+                    query = """
+                        SELECT column_name, data_type, is_nullable, column_default,
+                               character_maximum_length, numeric_precision, ordinal_position
+                        FROM information_schema.columns
+                        WHERE table_name = ?
+                        ORDER BY ordinal_position
+                    """
+                    cursor.execute(query, (table_name,))
+                
+                rows = cursor.fetchall()
+                
+                columns = []
+                for row in rows:
+                    columns.append({
+                        "name": row[0],
+                        "type": row[1],
+                        "nullable": row[2] == 'YES' or row[2] == 'Y' or row[2] == True,
+                        "default": str(row[3]) if row[3] else None,
+                        "max_length": row[4],
+                        "precision": row[5],
+                        "position": row[6]
+                    })
+                
+                return columns
+                
+            finally:
+                cursor.close()
+    
+    @staticmethod
+    def preview_table(
+        db_type: str,
+        config: Dict[str, Any],
+        credentials: Dict[str, str],
+        table_name: str,
+        schema_name: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a preview of data from a table.
+        
+        Args:
+            db_type: Database type
+            config: Connection config
+            credentials: Username and password
+            table_name: Name of the table
+            schema_name: Optional schema name
+            limit: Max rows to return
+            
+        Returns:
+            List of row dictionaries
+        """
+        # Build qualified table name
+        if schema_name:
+            qualified_name = f'"{schema_name}"."{table_name}"'
+        else:
+            qualified_name = f'"{table_name}"'
+        
+        # Build query based on database type
+        if db_type == 'oracle':
+            query = f"SELECT * FROM {qualified_name} WHERE ROWNUM <= {limit}"
+        elif db_type == 'sqlserver':
+            query = f"SELECT TOP {limit} * FROM {qualified_name}"
+        else:
+            query = f"SELECT * FROM {qualified_name} LIMIT {limit}"
+        
+        return DatabaseService.execute_query(db_type, config, credentials, query)
+

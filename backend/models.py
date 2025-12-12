@@ -281,6 +281,35 @@ class ReportValidation(Base):
     validation_rule = relationship("ValidationRule", back_populates="reports")
 
 
+class ReportMode(str, enum.Enum):
+    """Report creation mode"""
+    SIMPLE = "simple"      # Declarative mapping (no code)
+    ADVANCED = "advanced"  # Python code transformation
+
+
+class ReportSchema(Base, TimestampMixin):
+    """
+    Stores uploaded XSD schemas for declarative report generation.
+    Schemas are parsed and cached for efficient mapping UI.
+    """
+    __tablename__ = "report_schemas"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)  # e.g., "MiFIR RTS25 v1.2"
+    description = Column(Text, nullable=True)
+    version = Column(String(50), nullable=True)  # Schema version identifier
+    xsd_content = Column(Text, nullable=False)   # Raw XSD XML content
+    parsed_elements = Column(JSONB, nullable=True)  # Cached parsed structure
+    root_element = Column(String(255), nullable=True)  # Main root element name
+    namespace = Column(String(500), nullable=True)  # Target namespace
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    tenant = relationship("Tenant")
+
+
 # === Cross-Reference / Mappings ===
 
 # Association table for many-to-many relationship between entries and reports

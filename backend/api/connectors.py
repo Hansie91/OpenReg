@@ -230,3 +230,145 @@ async def test_existing_connector(
         return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": f"Connection test failed: {str(e)}"}
+
+
+@router.get("/{connector_id}/tables")
+async def list_connector_tables(
+    connector_id: UUID,
+    schema_name: Optional[str] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all tables available from a connector.
+    
+    Args:
+        connector_id: ID of the connector
+        schema_name: Optional schema filter (e.g., 'public', 'dbo')
+    
+    Returns:
+        List of tables with schema and name
+    """
+    connector = db.query(models.Connector).filter(
+        models.Connector.id == connector_id,
+        models.Connector.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    
+    try:
+        credentials = decrypt_credentials(connector.encrypted_credentials)
+        
+        # Get tables using the appropriate query for the database type
+        tables = DatabaseService.get_tables(
+            db_type=connector.type.value,
+            config=connector.config,
+            credentials=credentials,
+            schema_filter=schema_name
+        )
+        
+        return {"tables": tables}
+    except DatabaseConnectionError as e:
+        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list tables: {str(e)}")
+
+
+@router.get("/{connector_id}/columns")
+async def list_table_columns(
+    connector_id: UUID,
+    table: str,
+    schema_name: Optional[str] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all columns for a specific table.
+    
+    Args:
+        connector_id: ID of the connector
+        table: Name of the table
+        schema_name: Optional schema name
+    
+    Returns:
+        List of columns with name, type, nullable, etc.
+    """
+    connector = db.query(models.Connector).filter(
+        models.Connector.id == connector_id,
+        models.Connector.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    
+    try:
+        credentials = decrypt_credentials(connector.encrypted_credentials)
+        
+        # Get columns for the specified table
+        columns = DatabaseService.get_columns(
+            db_type=connector.type.value,
+            config=connector.config,
+            credentials=credentials,
+            table_name=table,
+            schema_name=schema_name
+        )
+        
+        return {"columns": columns}
+    except DatabaseConnectionError as e:
+        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list columns: {str(e)}")
+
+
+@router.get("/{connector_id}/preview")
+async def preview_table_data(
+    connector_id: UUID,
+    table: str,
+    schema_name: Optional[str] = None,
+    limit: int = 10,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview data from a table (first N rows).
+    
+    Args:
+        connector_id: ID of the connector
+        table: Name of the table
+        schema_name: Optional schema name
+        limit: Maximum rows to return (default 10, max 100)
+    
+    Returns:
+        Sample rows from the table
+    """
+    if limit > 100:
+        limit = 100
+    
+    connector = db.query(models.Connector).filter(
+        models.Connector.id == connector_id,
+        models.Connector.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    
+    try:
+        credentials = decrypt_credentials(connector.encrypted_credentials)
+        
+        # Get preview data
+        rows = DatabaseService.preview_table(
+            db_type=connector.type.value,
+            config=connector.config,
+            credentials=credentials,
+            table_name=table,
+            schema_name=schema_name,
+            limit=limit
+        )
+        
+        return {"rows": rows, "table": table, "row_count": len(rows)}
+    except DatabaseConnectionError as e:
+        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to preview data: {str(e)}")
+

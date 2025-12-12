@@ -14,6 +14,7 @@ import Exceptions from './pages/ExceptionsPage';
 import Schedules from './pages/Schedules';
 import Destinations from './pages/Destinations';
 import Admin from './pages/Admin';
+import Schemas from './pages/Schemas';
 import Layout from './components/Layout';
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ function App() {
                         <Route path="exceptions" element={<Exceptions />} />
                         <Route path="schedules" element={<Schedules />} />
                         <Route path="destinations" element={<Destinations />} />
+                        <Route path="schemas" element={<Schemas />} />
                         <Route path="admin" element={<Admin />} />
                     </Route>
                 </Routes>
