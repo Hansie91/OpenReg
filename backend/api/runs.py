@@ -118,23 +118,7 @@ async def get_run(
     return run
 
 
-@router.get("/{run_id}/logs")
-async def get_run_logs(
-    run_id: UUID,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get logs for a job run - TODO: Stream from MinIO"""
-    run = db.query(models.JobRun).filter(
-        models.JobRun.id == run_id,
-        models.JobRun.tenant_id == current_user.tenant_id
-    ).first()
-    
-    if not run:
-        raise HTTPException(status_code=404, detail="Job run not found")
-    
-    # TODO: Fetch actual logs from MinIO using run.logs_uri
-    return {"logs": "Log streaming not yet implemented - TODO for v1"}
+# Logs endpoint is now in api/logs.py
 
 
 @router.get("/{run_id}/artifacts")

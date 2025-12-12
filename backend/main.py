@@ -5,7 +5,7 @@ import logging
 
 from database import engine, Base
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -65,6 +65,8 @@ app.include_router(exceptions.router, prefix=f"{API_PREFIX}/exceptions", tags=["
 app.include_router(schedules.router, prefix=f"{API_PREFIX}/schedules", tags=["Schedules"])
 app.include_router(destinations.router, prefix=f"{API_PREFIX}/destinations", tags=["Destinations"])
 app.include_router(runs.router, prefix=f"{API_PREFIX}/runs", tags=["Job Runs"])
+app.include_router(logs.router, prefix=f"{API_PREFIX}/runs", tags=["Log Streaming"])
+app.include_router(submissions.router, prefix=f"{API_PREFIX}/submissions", tags=["Submissions"])
 app.include_router(admin.router, prefix=f"{API_PREFIX}/admin", tags=["Administration"])
 
 

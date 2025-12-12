@@ -1,6 +1,14 @@
 import { useQuery } from 'react-query';
-import { runsAPI, reportsAPI } from '../services/api';
-import { useState } from 'react';
+import { runsAPI, reportsAPI, api } from '../services/api';
+import { useState, useEffect, useRef } from 'react';
+
+interface Log {
+    line_number: number;
+    timestamp: string;
+    level: string;
+    message: string;
+    context?: Record<string, any>;
+}
 
 interface Run {
     id: string;
@@ -47,6 +55,11 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
         </svg>
     ),
+    Terminal: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
+        </svg>
+    ),
 };
 
 const getStatusBadge = (status: string) => {
@@ -72,14 +85,30 @@ export default function Runs() {
     const [filters, setFilters] = useState({
         status: '',
         report_id: '',
+        business_date: '',
         skip: 0,
         limit: 50
     });
+    const [logs, setLogs] = useState<Log[]>([]);
+    const [logsLoading, setLogsLoading] = useState(false);
+    const [showLogs, setShowLogs] = useState(false);
+    const logsEndRef = useRef<HTMLDivElement>(null);
+
+    // Helper to remove empty params before API call
+    const cleanParams = (params: Record<string, any>) => {
+        const cleaned: Record<string, any> = {};
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== '' && value !== undefined && value !== null) {
+                cleaned[key] = value;
+            }
+        }
+        return cleaned;
+    };
 
     // Fetch runs with filters
     const { data: runsData, isLoading, refetch } = useQuery(
         ['runs', filters],
-        () => runsAPI.list(filters).then((res) => res.data)
+        () => runsAPI.list(cleanParams(filters)).then((res) => res.data)
     );
 
     // Fetch reports for filter dropdown
@@ -109,6 +138,39 @@ export default function Runs() {
     const viewDetails = (runId: string) => {
         setSelectedRunId(runId);
         setShowDetailsModal(true);
+        setLogs([]);
+        setShowLogs(false);
+    };
+
+    // Fetch logs for the selected run
+    const fetchLogs = async (runId: string) => {
+        setLogsLoading(true);
+        setShowLogs(true);
+        try {
+            const response = await api.get(`/runs/${runId}/logs?limit=200`);
+            setLogs(response.data.logs || []);
+        } catch (error) {
+            console.error('Failed to fetch logs:', error);
+        } finally {
+            setLogsLoading(false);
+        }
+    };
+
+    // Auto-scroll logs
+    useEffect(() => {
+        if (logsEndRef.current && showLogs) {
+            logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [logs, showLogs]);
+
+    const getLogLevelColor = (level: string) => {
+        switch (level) {
+            case 'error': return 'text-red-400';
+            case 'warning': return 'text-amber-400';
+            case 'info': return 'text-sky-400';
+            case 'debug': return 'text-gray-500';
+            default: return 'text-gray-300';
+        }
     };
 
     return (
@@ -157,6 +219,16 @@ export default function Runs() {
                             <option value="running">Running</option>
                             <option value="pending">Pending</option>
                         </select>
+                    </div>
+
+                    <div>
+                        <label className="input-label">Business Date</label>
+                        <input
+                            type="date"
+                            className="input text-sm"
+                            value={filters.business_date}
+                            onChange={(e) => setFilters({ ...filters, business_date: e.target.value, skip: 0 })}
+                        />
                     </div>
 
                     <div>
@@ -352,6 +424,46 @@ export default function Runs() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Log Viewer */}
+                            <div>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                        <Icons.Terminal />
+                                        Execution Logs
+                                    </h4>
+                                    {!showLogs && (
+                                        <button
+                                            onClick={() => fetchLogs(selectedRunId)}
+                                            className="btn btn-secondary btn-sm"
+                                            disabled={logsLoading}
+                                        >
+                                            {logsLoading ? 'Loading...' : 'View Logs'}
+                                        </button>
+                                    )}
+                                </div>
+                                {showLogs && (
+                                    <div className="bg-gray-900 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-xs">
+                                        {logs.length === 0 ? (
+                                            <p className="text-gray-500">No logs available</p>
+                                        ) : (
+                                            logs.map((log, idx) => (
+                                                <div key={idx} className="flex gap-2 py-0.5 hover:bg-gray-800">
+                                                    <span className="text-gray-600 w-8 text-right">{log.line_number}</span>
+                                                    <span className="text-gray-500 w-20">
+                                                        {new Date(log.timestamp).toLocaleTimeString()}
+                                                    </span>
+                                                    <span className={`w-16 uppercase font-semibold ${getLogLevelColor(log.level)}`}>
+                                                        {log.level}
+                                                    </span>
+                                                    <span className="text-gray-200 flex-1">{log.message}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                        <div ref={logsEndRef} />
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="modal-footer">

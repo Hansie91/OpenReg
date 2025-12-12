@@ -18,7 +18,7 @@ from services.validation_engine import ValidationEngine
 from services.execution_models import ExecutionContext, ResourceLimits
 from services.auth import decrypt_credentials
 
-router = APIRouter(prefix="/exceptions", tags=["exceptions"])
+router = APIRouter(tags=["exceptions"])
 
 
 # ==================== Request/Response Models ====================
@@ -36,6 +36,9 @@ class ExceptionResponse(BaseModel):
     amended_by: Optional[UUID]
     amended_at: Optional[datetime]
     created_at: datetime
+    # Fields for source tracking
+    rejection_source: Optional[str] = "pre_validation"  # pre_validation, regulator_file, regulator_record
+    rejection_code: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -82,6 +85,7 @@ class ExceptionStatsResponse(BaseModel):
 @router.get("", response_model=ExceptionListResponse)
 def list_exceptions(
     status: Optional[str] = Query(None, description="Filter by status"),
+    source: Optional[str] = Query(None, description="Filter by source: pre_validation, regulator_file, regulator_record"),
     job_run_id: Optional[UUID] = Query(None, description="Filter by job run"),
     limit: int = Query(100, le=1000),
     offset: int = Query(0, ge=0),
@@ -99,7 +103,11 @@ def list_exceptions(
     )
     
     if status:
-        query = query.filter(models.ValidationException.status == status)
+        try:
+            status_enum = models.ExceptionStatus(status.lower())
+            query = query.filter(models.ValidationException.status == status_enum)
+        except ValueError:
+            pass  # Invalid status, skip filter
     
     if job_run_id:
         query = query.filter(models.ValidationException.job_run_id == job_run_id)
@@ -129,13 +137,69 @@ def list_exceptions(
             "status": exc.status.value,
             "amended_by": exc.amended_by,
             "amended_at": exc.amended_at,
-            "created_at": exc.created_at
+            "created_at": exc.created_at,
+            "rejection_source": getattr(exc, 'rejection_source', 'pre_validation') or 'pre_validation',
+            "rejection_code": getattr(exc, 'rejection_code', None)
         }
+        
+        # Apply source filter if provided
+        if source:
+            if exc_dict["rejection_source"] != source:
+                continue
+        
         exception_responses.append(ExceptionResponse(**exc_dict))
     
     return ExceptionListResponse(
         total=total,
         exceptions=exception_responses
+    )
+
+
+@router.get("/stats", response_model=ExceptionStatsResponse)
+def get_exception_stats(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get statistics about validation exceptions"""
+    
+    # Get all exceptions for tenant
+    exceptions = db.query(models.ValidationException).filter(
+        models.ValidationException.job_run_id.in_(
+            db.query(models.JobRun.id).filter(
+                models.JobRun.tenant_id == current_user.tenant_id
+            )
+        )
+    ).all()
+    
+    total = len(exceptions)
+    pending = sum(1 for e in exceptions if e.status == models.ExceptionStatus.PENDING)
+    amended = sum(1 for e in exceptions if e.status == models.ExceptionStatus.AMENDED)
+    resolved = sum(1 for e in exceptions if e.status == models.ExceptionStatus.RESOLVED)
+    rejected = sum(1 for e in exceptions if e.status == models.ExceptionStatus.REJECTED)
+    
+    # Group by report
+    by_report = {}
+    for exc in exceptions:
+        job_run = db.query(models.JobRun).filter(models.JobRun.id == exc.job_run_id).first()
+        if job_run:
+            report_version = db.query(models.ReportVersion).filter(
+                models.ReportVersion.id == job_run.report_version_id
+            ).first()
+            if report_version:
+                report = db.query(models.Report).filter(
+                    models.Report.id == report_version.report_id
+                ).first()
+                if report:
+                    report_name = report.name
+                    by_report[report_name] = by_report.get(report_name, 0) + 1
+    
+    return ExceptionStatsResponse(
+        total_exceptions=total,
+        pending=pending,
+        amended=amended,
+        resolved=resolved,
+        rejected=rejected,
+        by_report=by_report
     )
 
 
@@ -344,52 +408,4 @@ def resubmit_exceptions(
         resubmitted_count=len(exceptions),
         new_job_run_id=supplemental_job_run.id,
         message=f"Successfully resubmitted {len(exceptions)} exceptions"
-    )
-
-
-@router.get("/stats", response_model=ExceptionStatsResponse)
-def get_exception_stats(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Get statistics about validation exceptions"""
-    
-    # Get all exceptions for tenant
-    exceptions = db.query(models.ValidationException).filter(
-        models.ValidationException.job_run_id.in_(
-            db.query(models.JobRun.id).filter(
-                models.JobRun.tenant_id == current_user.tenant_id
-            )
-        )
-    ).all()
-    
-    total = len(exceptions)
-    pending = sum(1 for e in exceptions if e.status == models.ExceptionStatus.PENDING)
-    amended = sum(1 for e in exceptions if e.status == models.ExceptionStatus.AMENDED)
-    resolved = sum(1 for e in exceptions if e.status == models.ExceptionStatus.RESOLVED)
-    rejected = sum(1 for e in exceptions if e.status == models.ExceptionStatus.REJECTED)
-    
-    # Group by report
-    by_report = {}
-    for exc in exceptions:
-        job_run = db.query(models.JobRun).filter(models.JobRun.id == exc.job_run_id).first()
-        if job_run:
-            report_version = db.query(models.ReportVersion).filter(
-                models.ReportVersion.id == job_run.report_version_id
-            ).first()
-            if report_version:
-                report = db.query(models.Report).filter(
-                    models.Report.id == report_version.report_id
-                ).first()
-                if report:
-                    report_name = report.name
-                    by_report[report_name] = by_report.get(report_name, 0) + 1
-    
-    return ExceptionStatsResponse(
-        total_exceptions=total,
-        pending=pending,
-        amended=amended,
-        resolved=resolved,
-        rejected=rejected,
-        by_report=by_report
     )

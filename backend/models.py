@@ -95,6 +95,44 @@ class ExceptionStatus(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class FileSubmissionStatus(str, enum.Enum):
+    """Status of a file submitted to regulator"""
+    PENDING = "pending"           # Not yet submitted
+    SUBMITTED = "submitted"       # Sent to regulator, awaiting response
+    ACCEPTED = "accepted"         # Regulator accepted the file
+    REJECTED = "rejected"         # Regulator rejected the file
+    PARTIAL = "partial"           # Some records accepted, some rejected
+
+
+class RecordStatus(str, enum.Enum):
+    """Status of individual records in the submission lifecycle"""
+    PENDING_DATA = "pending_data"               # Waiting for data
+    PRE_VALIDATION_PENDING = "pre_validation_pending"
+    PRE_VALIDATION_FAILED = "pre_validation_failed"
+    PRE_VALIDATION_PASSED = "pre_validation_passed"
+    SUBMITTED = "submitted"                     # Included in a submission file
+    ACCEPTED = "accepted"                       # Regulator accepted
+    FILE_REJECTED = "file_rejected"             # File-level rejection
+    RECORD_REJECTED = "record_rejected"         # Record-level rejection
+    AMENDED = "amended"                         # User amended after rejection
+    RESUBMITTED = "resubmitted"                 # Included in supplemental file
+
+
+class ExceptionSource(str, enum.Enum):
+    """Source of the exception/rejection"""
+    PRE_VALIDATION = "pre_validation"           # Failed internal pre-validation
+    REGULATOR_FILE = "regulator_file"           # Regulator rejected entire file
+    REGULATOR_RECORD = "regulator_record"       # Regulator rejected specific record
+
+
+class LogLevel(str, enum.Enum):
+    """Log level for job run logs"""
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 class AuditAction(str, enum.Enum):
     CREATE = "create"
     UPDATE = "update"
@@ -494,3 +532,152 @@ class AuditLog(Base):
     
     # Relationships
     user = relationship("User", back_populates="audit_logs")
+
+
+# === File & Record Submissions ===
+
+class FileSubmission(Base, TimestampMixin):
+    """Tracks files submitted to regulators"""
+    __tablename__ = "file_submissions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
+    business_date = Column(Date, nullable=False, index=True)
+    submission_sequence = Column(Integer, default=1)  # 1=original, 2+=supplemental
+    file_name = Column(String(255), nullable=False)
+    file_checksum = Column(String(64), nullable=True)  # SHA-256
+    destination_id = Column(UUID(as_uuid=True), ForeignKey("destinations.id"), nullable=True)
+    status = Column(Enum(FileSubmissionStatus), default=FileSubmissionStatus.PENDING, nullable=False, index=True)
+    
+    # Submission tracking
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    record_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    
+    # Regulator response
+    response_received_at = Column(DateTime(timezone=True), nullable=True)
+    response_code = Column(String(50), nullable=True)
+    response_message = Column(Text, nullable=True)
+    
+    # Parent for supplemental submissions
+    parent_submission_id = Column(UUID(as_uuid=True), ForeignKey("file_submissions.id"), nullable=True)
+    
+    # Relationships
+    records = relationship("RecordSubmission", back_populates="file_submission", cascade="all, delete-orphan")
+
+
+class RecordSubmission(Base, TimestampMixin):
+    """Tracks individual records through the submission lifecycle"""
+    __tablename__ = "record_submissions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    file_submission_id = Column(UUID(as_uuid=True), ForeignKey("file_submissions.id"), nullable=True, index=True)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
+    business_date = Column(Date, nullable=False, index=True)
+    
+    # Record identification
+    record_ref = Column(String(100), nullable=False, index=True)  # Transaction ID / UTI
+    row_number = Column(Integer, nullable=True)
+    
+    # Data
+    original_data = Column(JSONB, nullable=False)
+    amended_data = Column(JSONB, nullable=True)
+    
+    # Status
+    status = Column(Enum(RecordStatus), default=RecordStatus.PENDING_DATA, nullable=False, index=True)
+    submission_sequence = Column(Integer, default=1)  # Which submission this was included in
+    
+    # Rejection details (from regulator or pre-validation)
+    rejection_source = Column(Enum(ExceptionSource), nullable=True)
+    rejection_code = Column(String(100), nullable=True)  # Regulator error code
+    rejection_message = Column(Text, nullable=True)
+    
+    # Amendment tracking
+    amended_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    amended_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    file_submission = relationship("FileSubmission", back_populates="records")
+    status_history = relationship("RecordStatusHistory", back_populates="record", cascade="all, delete-orphan")
+
+
+class RecordStatusHistory(Base):
+    """Audit trail for record status changes"""
+    __tablename__ = "record_status_history"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    record_id = Column(UUID(as_uuid=True), ForeignKey("record_submissions.id"), nullable=False, index=True)
+    from_status = Column(Enum(RecordStatus), nullable=True)
+    to_status = Column(Enum(RecordStatus), nullable=False)
+    changed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    change_reason = Column(Text, nullable=True)  # Amendment reason, rejection code, etc.
+    changed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Optional: snapshot of data at this point
+    data_snapshot = Column(JSONB, nullable=True)
+    
+    # Relationships
+    record = relationship("RecordSubmission", back_populates="status_history")
+
+
+# === Log Streaming ===
+
+class JobRunLog(Base):
+    """
+    Log entries for job runs - enables real-time log streaming.
+    Logs are stored here for recent runs and archived to MinIO for older runs.
+    """
+    __tablename__ = "job_run_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)  # Sequential line number
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    level = Column(Enum(LogLevel), default=LogLevel.INFO, nullable=False)
+    message = Column(Text, nullable=False)
+    context = Column(JSONB, nullable=True)  # Additional structured data (row count, validation name, etc.)
+    
+    # Composite index for efficient streaming queries
+    __table_args__ = (
+        # Index for fetching logs after a given line
+        # CREATE INDEX ix_job_run_logs_stream ON job_run_logs (job_run_id, line_number);
+    )
+
+
+# === Regulator Response ===
+
+class RegulatorResponse(Base, TimestampMixin):
+    """
+    Stores uploaded regulator response files and parsing results.
+    
+    Regulator responses are typically:
+    1. Uploaded manually by user (file upload)
+    2. Received via webhook (FTP callback, API)
+    3. Pulled via regulator API (scheduled check)
+    """
+    __tablename__ = "regulator_responses"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    file_submission_id = Column(UUID(as_uuid=True), ForeignKey("file_submissions.id"), nullable=False, index=True)
+    
+    # Response file
+    response_file_name = Column(String(255), nullable=True)
+    response_storage_uri = Column(String(1000), nullable=True)  # MinIO path
+    
+    # Parsed result
+    overall_status = Column(Enum(FileSubmissionStatus), nullable=False)
+    total_records = Column(Integer, nullable=True)
+    accepted_records = Column(Integer, nullable=True)
+    rejected_records = Column(Integer, nullable=True)
+    
+    # Raw response data
+    raw_response = Column(JSONB, nullable=True)
+    parsed_rejections = Column(JSONB, nullable=True)  # [{record_ref, code, message}]
+    
+    # Ingestion method
+    ingestion_method = Column(String(50), nullable=False)  # 'file_upload', 'webhook', 'api_poll'
+    ingested_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
