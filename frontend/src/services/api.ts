@@ -140,6 +140,7 @@ export const destinationsAPI = {
     update: (id: string, data: any) => api.put(`/destinations/${id}`, data),
     delete: (id: string) => api.delete(`/destinations/${id}`),
     test: (data: any) => api.post('/destinations/test', data),
+    testExisting: (id: string) => api.post(`/destinations/${id}/test`),
 };
 
 // Admin API

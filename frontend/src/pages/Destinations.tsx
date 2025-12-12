@@ -41,49 +41,13 @@ const Icons = {
     ),
 };
 
-// Demo destinations
-const demoDestinations = [
-    {
-        id: '1',
-        name: 'FCA SFTP Gateway',
-        type: 'sftp',
-        host: 'sftp.fca.org.uk',
-        port: 22,
-        username: 'firm_user',
-        directory: '/reports/mifir/',
-        is_active: true,
-        last_delivery_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        last_status: 'success',
-    },
-    {
-        id: '2',
-        name: 'Internal Archive',
-        type: 'sftp',
-        host: 'archive.internal.com',
-        port: 22,
-        username: 'reports_user',
-        directory: '/archive/regulatory/',
-        is_active: true,
-        last_delivery_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        last_status: 'success',
-    },
-    {
-        id: '3',
-        name: 'Legacy FTP Server',
-        type: 'ftp',
-        host: 'ftp.legacy.internal',
-        port: 21,
-        username: 'legacy_user',
-        directory: '/incoming/',
-        is_active: false,
-        last_delivery_at: null,
-        last_status: null,
-    },
-];
-
 export default function Destinations() {
     const queryClient = useQueryClient();
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [editingDest, setEditingDest] = useState<any>(null);
+    const [deleteConfirmDest, setDeleteConfirmDest] = useState<any>(null);
+    const [testingDestId, setTestingDestId] = useState<string | null>(null);
+    const [testExistingResult, setTestExistingResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [testLoading, setTestLoading] = useState(false);
     const [formData, setFormData] = useState({
@@ -96,12 +60,80 @@ export default function Destinations() {
         directory: '/',
         retry_count: '3',
     });
+    const [editFormData, setEditFormData] = useState({
+        name: '',
+        host: '',
+        port: '',
+        directory: '',
+        retry_count: '',
+        password: '',  // Only update if provided
+    });
 
     const { data: destinations, isLoading } = useQuery('destinations', () =>
         destinationsAPI.list().then((res) => res.data)
     );
 
-    const displayDestinations = destinations && destinations.length > 0 ? destinations : demoDestinations;
+    // Use actual data, will be empty array when no destinations exist
+    const displayDestinations = destinations || [];
+
+    const createMutation = useMutation(
+        (data: any) => destinationsAPI.create(data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('destinations');
+                setShowCreateModal(false);
+                setFormData({ name: '', type: 'sftp', host: '', port: '22', username: '', password: '', directory: '/', retry_count: '3' });
+                setTestResult(null);
+            },
+        }
+    );
+
+    const deleteMutation = useMutation(
+        (id: string) => destinationsAPI.delete(id),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('destinations');
+            },
+        }
+    );
+
+    const updateMutation = useMutation(
+        ({ id, data }: { id: string; data: any }) => destinationsAPI.update(id, data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('destinations');
+                setEditingDest(null);
+            },
+        }
+    );
+
+    const openEditModal = (dest: any) => {
+        setEditFormData({
+            name: dest.name || '',
+            host: dest.host || '',
+            port: String(dest.port || 22),
+            directory: dest.directory || '/',
+            retry_count: String(dest.retry_count || 3),
+            password: '',  // Empty - only update if user provides new password
+        });
+        setEditingDest(dest);
+    };
+
+    const handleUpdate = () => {
+        if (!editingDest) return;
+        const updateData: any = {
+            name: editFormData.name,
+            host: editFormData.host,
+            port: parseInt(editFormData.port),
+            directory: editFormData.directory,
+            retry_count: parseInt(editFormData.retry_count),
+        };
+        // Only include password if user provided a new one
+        if (editFormData.password) {
+            updateData.password = editFormData.password;
+        }
+        updateMutation.mutate({ id: editingDest.id, data: updateData });
+    };
 
     const handleTypeChange = (type: string) => {
         setFormData({
@@ -111,19 +143,36 @@ export default function Destinations() {
         });
     };
 
+    const handleSubmit = () => {
+        if (!formData.name || !formData.host || !formData.username || !formData.password) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        createMutation.mutate({
+            name: formData.name,
+            protocol: formData.type,  // API expects 'protocol', not 'type'
+            host: formData.host,
+            port: parseInt(formData.port),
+            username: formData.username,
+            password: formData.password,
+            directory: formData.directory || '/',
+            retry_count: parseInt(formData.retry_count) || 3,
+        });
+    };
+
     const handleTest = async () => {
         setTestLoading(true);
         setTestResult(null);
         try {
-            await destinationsAPI.test({
-                type: formData.type,
+            const response = await destinationsAPI.test({
+                protocol: formData.type,  // API expects 'protocol', not 'type'
                 host: formData.host,
                 port: parseInt(formData.port),
                 username: formData.username,
                 password: formData.password,
                 directory: formData.directory,
             });
-            setTestResult({ success: true, message: 'Connection successful!' });
+            setTestResult(response.data);
         } catch (err: any) {
             setTestResult({
                 success: false,
@@ -131,6 +180,24 @@ export default function Destinations() {
             });
         } finally {
             setTestLoading(false);
+        }
+    };
+
+    const handleTestExisting = async (dest: any) => {
+        setTestingDestId(dest.id);
+        setTestExistingResult(null);
+        try {
+            // Use dedicated endpoint that tests using stored credentials
+            const response = await destinationsAPI.testExisting(dest.id);
+            setTestExistingResult({ id: dest.id, ...response.data });
+        } catch (err: any) {
+            setTestExistingResult({
+                id: dest.id,
+                success: false,
+                message: err.response?.data?.detail || 'Connection test failed',
+            });
+        } finally {
+            setTestingDestId(null);
         }
     };
 
@@ -155,18 +222,18 @@ export default function Destinations() {
                 <div className="card p-12 text-center">
                     <div className="spinner mx-auto text-indigo-600"></div>
                 </div>
-            ) : (
+            ) : displayDestinations.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {displayDestinations.map((dest: any) => (
                         <div key={dest.id} className="card">
                             <div className="p-6">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <span className="text-2xl">{dest.type === 'sftp' ? '🔒' : '📁'}</span>
+                                        <span className="text-2xl">{dest.protocol === 'sftp' ? '🔒' : '📁'}</span>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{dest.name}</h3>
-                                            <span className={`badge ${dest.type === 'sftp' ? 'badge-info' : 'badge-gray'}`}>
-                                                {dest.type.toUpperCase()}
+                                            <span className={`badge ${dest.protocol === 'sftp' ? 'badge-info' : 'badge-gray'}`}>
+                                                {dest.protocol?.toUpperCase()}
                                             </span>
                                         </div>
                                     </div>
@@ -199,20 +266,50 @@ export default function Destinations() {
                                 </div>
                             </div>
                             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2">
-                                <button className="btn btn-ghost text-sm">
+                                <button
+                                    onClick={() => handleTestExisting(dest)}
+                                    disabled={testingDestId === dest.id}
+                                    className="btn btn-ghost text-sm"
+                                >
                                     <Icons.Test />
-                                    <span className="ml-1">Test</span>
+                                    <span className="ml-1">{testingDestId === dest.id ? 'Testing...' : 'Test'}</span>
                                 </button>
-                                <button className="btn btn-ghost text-sm">
+                                <button
+                                    onClick={() => openEditModal(dest)}
+                                    className="btn btn-ghost text-sm"
+                                >
                                     <Icons.Edit />
                                     <span className="ml-1">Edit</span>
                                 </button>
-                                <button className="btn btn-ghost text-red-600 hover:bg-red-50 text-sm">
+                                <button
+                                    onClick={() => setDeleteConfirmDest(dest)}
+                                    className="btn btn-ghost text-red-600 hover:bg-red-50 text-sm"
+                                >
                                     <Icons.Trash />
                                 </button>
                             </div>
+                            {testExistingResult && testExistingResult.id === dest.id && (
+                                <div className={`px-6 py-3 ${testExistingResult.success ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+                                    <div className="flex items-center gap-2 text-sm">
+                                        {testExistingResult.success ? <Icons.Check /> : <Icons.Close />}
+                                        <span>{testExistingResult.message}</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ))}
+                </div>
+            ) : (
+                <div className="card p-12 text-center">
+                    <div className="text-gray-400 mx-auto mb-4">
+                        <Icons.Send />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900">No destinations yet</h3>
+                    <p className="mt-2 text-sm text-gray-500">Add your first SFTP or FTP destination to deliver reports</p>
+                    <button onClick={() => setShowCreateModal(true)} className="btn btn-primary mt-4">
+                        <Icons.Plus />
+                        <span className="ml-2">Add Destination</span>
+                    </button>
                 </div>
             )}
 
@@ -245,8 +342,8 @@ export default function Destinations() {
                                             type="button"
                                             onClick={() => handleTypeChange('sftp')}
                                             className={`flex-1 py-2.5 rounded-lg border-2 font-medium transition-all ${formData.type === 'sftp'
-                                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                                                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                                                 }`}
                                         >
                                             🔒 SFTP
@@ -255,8 +352,8 @@ export default function Destinations() {
                                             type="button"
                                             onClick={() => handleTypeChange('ftp')}
                                             className={`flex-1 py-2.5 rounded-lg border-2 font-medium transition-all ${formData.type === 'ftp'
-                                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                                                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                                                 }`}
                                         >
                                             📁 FTP
@@ -354,8 +451,128 @@ export default function Destinations() {
                             <button onClick={() => setShowCreateModal(false)} className="btn btn-secondary">
                                 Cancel
                             </button>
-                            <button className="btn btn-primary">
-                                Create Destination
+                            <button onClick={handleSubmit} disabled={createMutation.isLoading} className="btn btn-primary">
+                                {createMutation.isLoading ? 'Creating...' : 'Create Destination'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {editingDest && (
+                <div className="modal-overlay" onClick={() => setEditingDest(null)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Destination</h3>
+                            <button onClick={() => setEditingDest(null)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <div>
+                                <label className="input-label">Name</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={editFormData.name}
+                                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                                />
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="col-span-2">
+                                    <label className="input-label">Host</label>
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        value={editFormData.host}
+                                        onChange={(e) => setEditFormData({ ...editFormData, host: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="input-label">Port</label>
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        value={editFormData.port}
+                                        onChange={(e) => setEditFormData({ ...editFormData, port: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="input-label">Directory</label>
+                                    <input
+                                        type="text"
+                                        className="input font-mono"
+                                        value={editFormData.directory}
+                                        onChange={(e) => setEditFormData({ ...editFormData, directory: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="input-label">Retry Count</label>
+                                    <input
+                                        type="number"
+                                        className="input"
+                                        value={editFormData.retry_count}
+                                        onChange={(e) => setEditFormData({ ...editFormData, retry_count: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="input-label">New Password (leave empty to keep current)</label>
+                                <input
+                                    type="password"
+                                    className="input"
+                                    placeholder="••••••••"
+                                    value={editFormData.password}
+                                    onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setEditingDest(null)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button onClick={handleUpdate} disabled={updateMutation.isLoading} className="btn btn-primary">
+                                {updateMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirmDest && (
+                <div className="modal-overlay" onClick={() => setDeleteConfirmDest(null)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Confirm Delete</h3>
+                            <button onClick={() => setDeleteConfirmDest(null)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete this destination?</p>
+                            <div className="mt-4 p-3 bg-gray-50 rounded">
+                                <div className="text-sm font-medium">{deleteConfirmDest.name}</div>
+                                <div className="text-sm text-gray-500 mt-1">
+                                    {deleteConfirmDest.protocol?.toUpperCase()} · {deleteConfirmDest.host}:{deleteConfirmDest.port}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setDeleteConfirmDest(null)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    deleteMutation.mutate(deleteConfirmDest.id);
+                                    setDeleteConfirmDest(null);
+                                }}
+                                className="btn btn-danger bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                Delete
                             </button>
                         </div>
                     </div>
