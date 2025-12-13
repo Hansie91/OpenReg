@@ -95,6 +95,21 @@ export const runsAPI = {
     getLogs: (id: string) => api.get(`/runs/${id}/logs`),
     getArtifacts: (id: string) => api.get(`/runs/${id}/artifacts`),
     rerun: (id: string) => api.post(`/runs/${id}/rerun`),
+    downloadArtifact: async (runId: string, artifactId: string, filename: string) => {
+        const response = await api.get(`/runs/${runId}/artifacts/${artifactId}/download`, {
+            responseType: 'blob'
+        });
+        // Create download link and trigger download
+        const blob = new Blob([response.data], { type: response.headers['content-type'] });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename || 'download';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    },
 };
 
 // Mappings API

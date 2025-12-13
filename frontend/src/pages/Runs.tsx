@@ -2,8 +2,7 @@ import { useQuery } from 'react-query';
 import { runsAPI, reportsAPI, api } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 
-// API URL for direct downloads (bypasses frontend routing)
-const API_URL = 'http://localhost:8000';
+// API URL removed - now using authenticated downloads via API client
 
 interface Log {
     line_number: number;
@@ -293,7 +292,14 @@ export default function Runs() {
                                     <td>
                                         {run.artifact_count > 0 && run.first_artifact_id ? (
                                             <button
-                                                onClick={() => window.open(`${API_URL}/api/v1/runs/${run.id}/artifacts/${run.first_artifact_id}/download`, '_blank')}
+                                                onClick={async () => {
+                                                    try {
+                                                        await runsAPI.downloadArtifact(run.id, run.first_artifact_id, `report_${run.id.slice(0, 8)}.csv`);
+                                                    } catch (err) {
+                                                        console.error('Download failed:', err);
+                                                        alert('Download failed. Please try again.');
+                                                    }
+                                                }}
                                                 className="btn btn-ghost btn-sm text-indigo-600 hover:text-indigo-700"
                                                 title="Download Artifact"
                                             >
@@ -424,7 +430,14 @@ export default function Runs() {
                                                     </div>
                                                 </div>
                                                 <button
-                                                    onClick={() => window.open(`${API_URL}/api/v1/runs/${selectedRunId}/artifacts/${artifact.id}/download`, '_blank')}
+                                                    onClick={async () => {
+                                                        try {
+                                                            await runsAPI.downloadArtifact(selectedRunId!, artifact.id, artifact.filename);
+                                                        } catch (err) {
+                                                            console.error('Download failed:', err);
+                                                            alert('Download failed. Please try again.');
+                                                        }
+                                                    }}
                                                     className="btn btn-secondary btn-sm"
                                                 >
                                                     <Icons.Download />
