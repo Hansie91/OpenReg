@@ -170,10 +170,14 @@ export const destinationsAPI = {
 export const adminAPI = {
     listUsers: () => api.get('/admin/users'),
     getUser: (id: string) => api.get(`/admin/users/${id}`),
+    getCurrentUser: () => api.get('/admin/users/me'),
     createUser: (data: any) => api.post('/admin/users', data),
     updateUser: (id: string, data: any) => api.put(`/admin/users/${id}`, data),
     deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
     listRoles: () => api.get('/admin/roles'),
+    createRole: (data: any) => api.post('/admin/roles', data),
+    updateRole: (id: string, data: any) => api.put(`/admin/roles/${id}`, data),
+    deleteRole: (id: string) => api.delete(`/admin/roles/${id}`),
     getAuditLogs: (params?: any) => api.get('/admin/audit', { params }),
     getAuditStats: () => api.get('/admin/audit/stats'),
 };

@@ -41,38 +41,55 @@ const Icons = {
     ),
 };
 
-// Demo users
-const demoUsers = [
-    { id: '1', email: 'admin@example.com', full_name: 'Admin User', role: 'Administrator', is_active: true, created_at: '2024-01-01' },
-    { id: '2', email: 'analyst@example.com', full_name: 'Jane Analyst', role: 'Analyst', is_active: true, created_at: '2024-01-15' },
-    { id: '3', email: 'viewer@example.com', full_name: 'John Viewer', role: 'Viewer', is_active: false, created_at: '2024-02-01' },
-];
+// User interface
+interface User {
+    id: string;
+    email: string;
+    full_name: string | null;
+    is_active: boolean;
+    is_superuser: boolean;
+    role_id: string | null;
+    role_name: string | null;
+    created_at: string;
+}
 
-// Demo audit logs
-const demoAuditLogs = [
-    { id: '1', action: 'report.executed', user_email: 'admin@example.com', resource: 'MiFIR Report', timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() },
-    { id: '2', action: 'connector.created', user_email: 'admin@example.com', resource: 'Production DB', timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() },
-    { id: '3', action: 'user.login', user_email: 'admin@example.com', resource: null, timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() },
-    { id: '4', action: 'schedule.updated', user_email: 'analyst@example.com', resource: 'Daily MiFIR', timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-    { id: '5', action: 'mapping.created', user_email: 'admin@example.com', resource: 'Venue Codes', timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() },
-];
-
-const demoRoles = [
-    { id: '1', name: 'Administrator', permissions: ['*'], users_count: 1 },
-    { id: '2', name: 'Analyst', permissions: ['reports:read', 'reports:execute', 'runs:read'], users_count: 1 },
-    { id: '3', name: 'Viewer', permissions: ['reports:read', 'runs:read'], users_count: 1 },
-];
+// Role interface
+interface Role {
+    id: string;
+    name: string;
+    description: string | null;
+    permissions: string[];
+    user_count: number;
+    created_at: string;
+}
 
 type TabType = 'users' | 'roles' | 'audit';
 
 export default function Admin() {
+    const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<TabType>('users');
     const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+    const [showEditUserModal, setShowEditUserModal] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [userFormData, setUserFormData] = useState({
         email: '',
         full_name: '',
         password: '',
-        role_id: '',
+        is_superuser: false,
+        is_active: true,
+        role_id: '' as string | null,
+    });
+
+    // Role management state
+    const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
+    const [showEditRoleModal, setShowEditRoleModal] = useState(false);
+    const [showDeleteRoleConfirm, setShowDeleteRoleConfirm] = useState(false);
+    const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+    const [roleFormData, setRoleFormData] = useState({
+        name: '',
+        description: '',
+        permissions: [] as string[],
     });
 
     // Audit filter state
@@ -82,6 +99,12 @@ export default function Admin() {
         skip: 0,
         limit: 50
     });
+
+    // Get current user to check admin status
+    const { data: currentUser } = useQuery('admin-current-user', () =>
+        adminAPI.getCurrentUser().then((res) => res.data)
+    );
+    const isAdmin = currentUser?.is_superuser ?? false;
 
     const { data: users, isLoading: usersLoading } = useQuery('admin-users', () =>
         adminAPI.listUsers().then((res) => res.data)
@@ -95,8 +118,102 @@ export default function Admin() {
         adminAPI.getAuditLogs(auditFilters).then((res) => res.data)
     );
 
-    const displayUsers = users && users.length > 0 ? users : demoUsers;
-    const displayRoles = roles && roles.length > 0 ? roles : demoRoles;
+    // Mutations
+    const createUserMutation = useMutation(
+        (data: any) => adminAPI.createUser(data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('admin-users');
+                setShowCreateUserModal(false);
+                setUserFormData({ email: '', full_name: '', password: '', is_superuser: false, is_active: true, role_id: '' });
+                alert('User created successfully');
+            },
+            onError: (err: any) => {
+                alert(err.response?.data?.detail || 'Failed to create user');
+            }
+        }
+    );
+
+    const updateUserMutation = useMutation(
+        ({ id, data }: { id: string; data: any }) => adminAPI.updateUser(id, data),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('admin-users');
+                setShowEditUserModal(false);
+                setSelectedUser(null);
+                alert('User updated successfully');
+            },
+            onError: (err: any) => {
+                alert(err.response?.data?.detail || 'Failed to update user');
+            }
+        }
+    );
+
+    const deleteUserMutation = useMutation(
+        (id: string) => adminAPI.deleteUser(id),
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries('admin-users');
+                setShowDeleteConfirm(false);
+                setSelectedUser(null);
+                alert('User deleted successfully');
+            },
+            onError: (err: any) => {
+                alert(err.response?.data?.detail || 'Failed to delete user');
+            }
+        }
+    );
+
+    const handleCreateUser = () => {
+        if (!userFormData.email || !userFormData.password) {
+            alert('Email and password are required');
+            return;
+        }
+        createUserMutation.mutate({
+            ...userFormData,
+            role_id: userFormData.role_id || null
+        });
+    };
+
+    const handleEditUser = (user: User) => {
+        setSelectedUser(user);
+        setUserFormData({
+            email: user.email,
+            full_name: user.full_name || '',
+            password: '',
+            is_superuser: user.is_superuser,
+            is_active: user.is_active,
+            role_id: user.role_id || '',
+        });
+        setShowEditUserModal(true);
+    };
+
+    const handleUpdateUser = () => {
+        if (!selectedUser) return;
+        const updateData: any = {};
+        if (userFormData.email !== selectedUser.email) updateData.email = userFormData.email;
+        if (userFormData.full_name !== (selectedUser.full_name || '')) updateData.full_name = userFormData.full_name;
+        if (userFormData.is_superuser !== selectedUser.is_superuser) updateData.is_superuser = userFormData.is_superuser;
+        if (userFormData.is_active !== selectedUser.is_active) updateData.is_active = userFormData.is_active;
+        if (userFormData.password) updateData.password = userFormData.password;
+        // Always send role_id if changed
+        if (userFormData.role_id !== (selectedUser.role_id || '')) {
+            updateData.role_id = userFormData.role_id || null;
+        }
+
+        updateUserMutation.mutate({ id: selectedUser.id, data: updateData });
+    };
+
+    const handleDeleteClick = (user: User) => {
+        setSelectedUser(user);
+        setShowDeleteConfirm(true);
+    };
+
+    const handleConfirmDelete = () => {
+        if (selectedUser) {
+            deleteUserMutation.mutate(selectedUser.id);
+        }
+    };
 
     const tabs = [
         { id: 'users' as TabType, label: 'Users', icon: Icons.Users },
@@ -143,17 +260,19 @@ export default function Admin() {
                 <div>
                     <div className="flex justify-between mb-6">
                         <h2 className="text-lg font-semibold text-gray-900">User Management</h2>
-                        <button onClick={() => setShowCreateUserModal(true)} className="btn btn-primary">
-                            <Icons.Plus />
-                            <span className="ml-2">Add User</span>
-                        </button>
+                        {isAdmin && (
+                            <button onClick={() => setShowCreateUserModal(true)} className="btn btn-primary">
+                                <Icons.Plus />
+                                <span className="ml-2">Add User</span>
+                            </button>
+                        )}
                     </div>
 
                     {usersLoading ? (
                         <div className="card p-12 text-center">
                             <div className="spinner mx-auto text-indigo-600"></div>
                         </div>
-                    ) : (
+                    ) : users && users.length > 0 ? (
                         <div className="table-container">
                             <table className="table">
                                 <thead>
@@ -162,11 +281,11 @@ export default function Admin() {
                                         <th>Role</th>
                                         <th>Status</th>
                                         <th>Created</th>
-                                        <th>Actions</th>
+                                        {isAdmin && <th>Actions</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {displayUsers.map((user: any) => (
+                                    {users.map((user: User) => (
                                         <tr key={user.id}>
                                             <td>
                                                 <div className="flex items-center gap-3">
@@ -174,13 +293,22 @@ export default function Admin() {
                                                         {user.full_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <p className="font-medium text-gray-900">{user.full_name}</p>
+                                                        <p className="font-medium text-gray-900">{user.full_name || user.email}</p>
                                                         <p className="text-sm text-gray-500">{user.email}</p>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td>
-                                                <span className="badge badge-info">{user.role}</span>
+                                                <div className="flex flex-col gap-1">
+                                                    {user.is_superuser && (
+                                                        <span className="badge badge-warning">Administrator</span>
+                                                    )}
+                                                    {user.role_name ? (
+                                                        <span className="badge badge-info">{user.role_name}</span>
+                                                    ) : !user.is_superuser && (
+                                                        <span className="badge badge-gray">No role</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td>
                                                 <span className={`badge ${user.is_active ? 'badge-success' : 'badge-gray'}`}>
@@ -190,20 +318,41 @@ export default function Admin() {
                                             <td className="text-gray-500">
                                                 {new Date(user.created_at).toLocaleDateString()}
                                             </td>
-                                            <td>
-                                                <div className="flex gap-1">
-                                                    <button className="btn btn-ghost btn-icon text-indigo-600">
-                                                        <Icons.Edit />
-                                                    </button>
-                                                    <button className="btn btn-ghost btn-icon text-red-600">
-                                                        <Icons.Trash />
-                                                    </button>
-                                                </div>
-                                            </td>
+                                            {isAdmin && (
+                                                <td>
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            onClick={() => handleEditUser(user)}
+                                                            className="btn btn-ghost btn-icon text-indigo-600"
+                                                            title="Edit User"
+                                                        >
+                                                            <Icons.Edit />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteClick(user)}
+                                                            className="btn btn-ghost btn-icon text-red-600"
+                                                            title="Delete User"
+                                                            disabled={user.id === currentUser?.id}
+                                                        >
+                                                            <Icons.Trash />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    ) : (
+                        <div className="empty-state">
+                            <div className="text-gray-300 mx-auto">
+                                <Icons.Users />
+                            </div>
+                            <h3 className="empty-state-title">No users found</h3>
+                            <p className="empty-state-description">
+                                Add users to manage access to the system
+                            </p>
                         </div>
                     )}
                 </div>
@@ -214,41 +363,91 @@ export default function Admin() {
                 <div>
                     <div className="flex justify-between mb-6">
                         <h2 className="text-lg font-semibold text-gray-900">Role Management</h2>
-                        <button className="btn btn-primary">
-                            <Icons.Plus />
-                            <span className="ml-2">Add Role</span>
-                        </button>
+                        {isAdmin && (
+                            <button onClick={() => setShowCreateRoleModal(true)} className="btn btn-primary">
+                                <Icons.Plus />
+                                <span className="ml-2">Add Role</span>
+                            </button>
+                        )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {displayRoles.map((role: any) => (
-                            <div key={role.id} className="card p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="font-semibold text-gray-900">{role.name}</h3>
-                                    <span className="badge badge-gray">{role.users_count} users</span>
-                                </div>
-                                <div className="space-y-2">
-                                    <p className="text-xs font-medium text-gray-500 uppercase">Permissions</p>
-                                    <div className="flex flex-wrap gap-1">
-                                        {role.permissions.slice(0, 4).map((perm: string) => (
-                                            <span key={perm} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                                                {perm}
-                                            </span>
-                                        ))}
-                                        {role.permissions.length > 4 && (
-                                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                                                +{role.permissions.length - 4} more
-                                            </span>
-                                        )}
+                    {rolesLoading ? (
+                        <div className="card p-12 text-center">
+                            <div className="spinner mx-auto text-indigo-600"></div>
+                        </div>
+                    ) : roles && roles.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {roles.map((role: Role) => (
+                                <div key={role.id} className="card p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="font-semibold text-gray-900">{role.name}</h3>
+                                        <span className="badge badge-gray">{role.user_count} user{role.user_count !== 1 ? 's' : ''}</span>
                                     </div>
+                                    {role.description && (
+                                        <p className="text-sm text-gray-500 mb-4">{role.description}</p>
+                                    )}
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-medium text-gray-500 uppercase">Permissions</p>
+                                        <div className="flex flex-wrap gap-1">
+                                            {role.permissions.length > 0 ? (
+                                                <>
+                                                    {role.permissions.slice(0, 4).map((perm: string) => (
+                                                        <span key={perm} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                                                            {perm}
+                                                        </span>
+                                                    ))}
+                                                    {role.permissions.length > 4 && (
+                                                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                                                            +{role.permissions.length - 4} more
+                                                        </span>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <span className="text-sm text-gray-400">No permissions defined</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {isAdmin && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedRole(role);
+                                                    setRoleFormData({
+                                                        name: role.name,
+                                                        description: role.description || '',
+                                                        permissions: role.permissions || []
+                                                    });
+                                                    setShowEditRoleModal(true);
+                                                }}
+                                                className="btn btn-ghost text-sm flex-1"
+                                            >
+                                                Edit
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedRole(role);
+                                                    setShowDeleteRoleConfirm(true);
+                                                }}
+                                                className="btn btn-ghost text-sm text-red-600 hover:bg-red-50"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-                                    <button className="btn btn-ghost text-sm flex-1">Edit</button>
-                                    <button className="btn btn-ghost text-sm text-red-600 hover:bg-red-50">Delete</button>
-                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="empty-state">
+                            <div className="text-gray-300 mx-auto">
+                                <Icons.Shield />
                             </div>
-                        ))}
-                    </div>
+                            <h3 className="empty-state-title">No roles defined</h3>
+                            <p className="empty-state-description">
+                                Create roles to organize user permissions
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -421,7 +620,7 @@ export default function Admin() {
                                 />
                             </div>
                             <div>
-                                <label className="input-label">Full Name *</label>
+                                <label className="input-label">Full Name</label>
                                 <input
                                     type="text"
                                     className="input"
@@ -441,25 +640,363 @@ export default function Admin() {
                                 />
                             </div>
                             <div>
-                                <label className="input-label">Role *</label>
+                                <label className="input-label">Role</label>
                                 <select
                                     className="select"
-                                    value={userFormData.role_id}
-                                    onChange={(e) => setUserFormData({ ...userFormData, role_id: e.target.value })}
+                                    value={userFormData.role_id || ''}
+                                    onChange={(e) => setUserFormData({ ...userFormData, role_id: e.target.value || null })}
                                 >
-                                    <option value="">Select a role...</option>
-                                    {displayRoles.map((role: any) => (
+                                    <option value="">No role assigned</option>
+                                    {roles?.map((role: Role) => (
                                         <option key={role.id} value={role.id}>{role.name}</option>
                                     ))}
                                 </select>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    id="is_superuser"
+                                    checked={userFormData.is_superuser}
+                                    onChange={(e) => setUserFormData({ ...userFormData, is_superuser: e.target.checked })}
+                                    className="w-4 h-4"
+                                />
+                                <label htmlFor="is_superuser" className="text-sm text-gray-700">
+                                    Grant Administrator privileges
+                                </label>
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button onClick={() => setShowCreateUserModal(false)} className="btn btn-secondary">
                                 Cancel
                             </button>
-                            <button className="btn btn-primary">
-                                Create User
+                            <button
+                                onClick={handleCreateUser}
+                                className="btn btn-primary"
+                                disabled={createUserMutation.isLoading}
+                            >
+                                {createUserMutation.isLoading ? 'Creating...' : 'Create User'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit User Modal */}
+            {showEditUserModal && selectedUser && (
+                <div className="modal-overlay" onClick={() => setShowEditUserModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit User</h3>
+                            <button onClick={() => setShowEditUserModal(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <div>
+                                <label className="input-label">Email</label>
+                                <input
+                                    type="email"
+                                    className="input"
+                                    value={userFormData.email}
+                                    onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Full Name</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={userFormData.full_name}
+                                    onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">New Password (leave blank to keep current)</label>
+                                <input
+                                    type="password"
+                                    className="input"
+                                    placeholder="••••••••"
+                                    value={userFormData.password}
+                                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Role</label>
+                                <select
+                                    className="select"
+                                    value={userFormData.role_id || ''}
+                                    onChange={(e) => setUserFormData({ ...userFormData, role_id: e.target.value || null })}
+                                >
+                                    <option value="">No role assigned</option>
+                                    {roles?.map((role: Role) => (
+                                        <option key={role.id} value={role.id}>{role.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    id="edit_is_superuser"
+                                    checked={userFormData.is_superuser}
+                                    onChange={(e) => setUserFormData({ ...userFormData, is_superuser: e.target.checked })}
+                                    className="w-4 h-4"
+                                />
+                                <label htmlFor="edit_is_superuser" className="text-sm text-gray-700">
+                                    Administrator privileges
+                                </label>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    id="edit_is_active"
+                                    checked={userFormData.is_active}
+                                    onChange={(e) => setUserFormData({ ...userFormData, is_active: e.target.checked })}
+                                    className="w-4 h-4"
+                                />
+                                <label htmlFor="edit_is_active" className="text-sm text-gray-700">
+                                    Active (uncheck to deactivate user)
+                                </label>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowEditUserModal(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUpdateUser}
+                                className="btn btn-primary"
+                                disabled={updateUserMutation.isLoading}
+                            >
+                                {updateUserMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && selectedUser && (
+                <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title text-red-600">Delete User</h3>
+                            <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="text-gray-600">
+                                Are you sure you want to delete <strong>{selectedUser.full_name || selectedUser.email}</strong>?
+                            </p>
+                            <p className="text-sm text-gray-500 mt-2">
+                                This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDelete}
+                                className="btn btn-danger"
+                                disabled={deleteUserMutation.isLoading}
+                            >
+                                {deleteUserMutation.isLoading ? 'Deleting...' : 'Delete User'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Role Modal */}
+            {showCreateRoleModal && (
+                <div className="modal-overlay" onClick={() => setShowCreateRoleModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Add Role</h3>
+                            <button onClick={() => setShowCreateRoleModal(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <div>
+                                <label className="input-label">Role Name *</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    placeholder="e.g. Analyst, Viewer"
+                                    value={roleFormData.name}
+                                    onChange={(e) => setRoleFormData({ ...roleFormData, name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Description</label>
+                                <textarea
+                                    className="input"
+                                    rows={3}
+                                    placeholder="Describe what this role is for..."
+                                    value={roleFormData.description}
+                                    onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Permissions (comma-separated)</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    placeholder="e.g. reports:read, runs:execute"
+                                    value={roleFormData.permissions.join(', ')}
+                                    onChange={(e) => setRoleFormData({
+                                        ...roleFormData,
+                                        permissions: e.target.value.split(',').map(p => p.trim()).filter(p => p)
+                                    })}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowCreateRoleModal(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!roleFormData.name) {
+                                        alert('Role name is required');
+                                        return;
+                                    }
+                                    try {
+                                        await adminAPI.createRole(roleFormData);
+                                        queryClient.invalidateQueries('admin-roles');
+                                        setShowCreateRoleModal(false);
+                                        setRoleFormData({ name: '', description: '', permissions: [] });
+                                        alert('Role created successfully');
+                                    } catch (err: any) {
+                                        alert(err.response?.data?.detail || 'Failed to create role');
+                                    }
+                                }}
+                                className="btn btn-primary"
+                            >
+                                Create Role
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Role Modal */}
+            {showEditRoleModal && selectedRole && (
+                <div className="modal-overlay" onClick={() => setShowEditRoleModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Role</h3>
+                            <button onClick={() => setShowEditRoleModal(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <div>
+                                <label className="input-label">Role Name *</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={roleFormData.name}
+                                    onChange={(e) => setRoleFormData({ ...roleFormData, name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Description</label>
+                                <textarea
+                                    className="input"
+                                    rows={3}
+                                    value={roleFormData.description}
+                                    onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="input-label">Permissions (comma-separated)</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={roleFormData.permissions.join(', ')}
+                                    onChange={(e) => setRoleFormData({
+                                        ...roleFormData,
+                                        permissions: e.target.value.split(',').map(p => p.trim()).filter(p => p)
+                                    })}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowEditRoleModal(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!roleFormData.name) {
+                                        alert('Role name is required');
+                                        return;
+                                    }
+                                    try {
+                                        await adminAPI.updateRole(selectedRole.id, roleFormData);
+                                        queryClient.invalidateQueries('admin-roles');
+                                        queryClient.invalidateQueries('admin-users');
+                                        setShowEditRoleModal(false);
+                                        setSelectedRole(null);
+                                        alert('Role updated successfully');
+                                    } catch (err: any) {
+                                        alert(err.response?.data?.detail || 'Failed to update role');
+                                    }
+                                }}
+                                className="btn btn-primary"
+                            >
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Role Confirmation Modal */}
+            {showDeleteRoleConfirm && selectedRole && (
+                <div className="modal-overlay" onClick={() => setShowDeleteRoleConfirm(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title text-red-600">Delete Role</h3>
+                            <button onClick={() => setShowDeleteRoleConfirm(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="text-gray-600">
+                                Are you sure you want to delete the role <strong>{selectedRole.name}</strong>?
+                            </p>
+                            {selectedRole.user_count > 0 && (
+                                <p className="text-sm text-amber-600 mt-2">
+                                    Warning: {selectedRole.user_count} user(s) have this role assigned. They will be unassigned.
+                                </p>
+                            )}
+                            <p className="text-sm text-gray-500 mt-2">
+                                This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowDeleteRoleConfirm(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await adminAPI.deleteRole(selectedRole.id);
+                                        queryClient.invalidateQueries('admin-roles');
+                                        queryClient.invalidateQueries('admin-users');
+                                        setShowDeleteRoleConfirm(false);
+                                        setSelectedRole(null);
+                                        alert('Role deleted successfully');
+                                    } catch (err: any) {
+                                        alert(err.response?.data?.detail || 'Failed to delete role');
+                                    }
+                                }}
+                                className="btn btn-danger"
+                            >
+                                Delete Role
                             </button>
                         </div>
                     </div>

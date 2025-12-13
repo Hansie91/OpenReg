@@ -191,6 +191,22 @@ def require_permission(permission: str):
     return permission_checker
 
 
+async def require_admin(
+    current_user: models.User = Depends(get_current_user)
+) -> models.User:
+    """
+    Dependency to require admin (superuser) access.
+    Use in FastAPI routes: current_user = Depends(require_admin)
+    Raises 403 Forbidden if user is not an admin.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required"
+        )
+    return current_user
+
+
 # === Credential Encryption ===
 
 def encrypt_credentials(credentials_dict: dict) -> bytes:
