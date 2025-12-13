@@ -269,6 +269,8 @@ async def list_connector_tables(
         )
         
         return {"tables": tables}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except DatabaseConnectionError as e:
         raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
     except Exception as e:

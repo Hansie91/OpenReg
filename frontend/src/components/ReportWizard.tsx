@@ -122,10 +122,10 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
         schemasAPI.list().then(res => res.data.schemas)
     );
 
-    const { data: tables, isLoading: tablesLoading } = useQuery(
+    const { data: tables, isLoading: tablesLoading, error: tablesError } = useQuery(
         ['connector-tables', connectorId],
         () => connectorId ? connectorsAPI.getTables(connectorId).then(res => res.data.tables) : null,
-        { enabled: !!connectorId }
+        { enabled: !!connectorId, retry: false }
     );
 
     const { data: columns, isLoading: columnsLoading } = useQuery(
@@ -285,10 +285,10 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                         {visibleSteps.map((step, index) => (
                             <div key={step.id} className="flex items-center">
                                 <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors ${step.id === currentStep
-                                        ? 'bg-indigo-600 text-white'
-                                        : step.id < currentStep
-                                            ? 'bg-green-500 text-white'
-                                            : 'bg-gray-200 text-gray-600'
+                                    ? 'bg-indigo-600 text-white'
+                                    : step.id < currentStep
+                                        ? 'bg-green-500 text-white'
+                                        : 'bg-gray-200 text-gray-600'
                                     }`}>
                                     {step.id < currentStep ? <Icons.Check /> : index + 1}
                                 </div>
@@ -319,8 +319,8 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                                 <button
                                     onClick={() => setMode('simple')}
                                     className={`p-6 rounded-xl border-2 transition-all text-left ${mode === 'simple'
-                                            ? 'border-indigo-500 bg-indigo-50'
-                                            : 'border-gray-200 hover:border-gray-300'
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-gray-300'
                                         }`}
                                 >
                                     <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${mode === 'simple' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'
@@ -340,8 +340,8 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                                 <button
                                     onClick={() => setMode('advanced')}
                                     className={`p-6 rounded-xl border-2 transition-all text-left ${mode === 'advanced'
-                                            ? 'border-indigo-500 bg-indigo-50'
-                                            : 'border-gray-200 hover:border-gray-300'
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-gray-300'
                                         }`}
                                 >
                                     <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${mode === 'advanced' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'
@@ -416,6 +416,11 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                                         <div className="flex items-center gap-2 text-gray-500">
                                             <div className="spinner"></div>
                                             Loading tables...
+                                        </div>
+                                    ) : tablesError ? (
+                                        <div className="alert alert-error">
+                                            <Icons.Close />
+                                            <span>{(tablesError as any)?.response?.data?.detail || "Failed to load tables"}</span>
                                         </div>
                                     ) : (
                                         <select

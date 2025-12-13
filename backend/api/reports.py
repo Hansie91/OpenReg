@@ -11,6 +11,7 @@ from uuid import UUID
 
 from database import get_db
 from services.auth import get_current_user, log_audit
+from services.code_generator import CodeGenerator
 import models
 
 router = APIRouter()
@@ -21,6 +22,8 @@ router = APIRouter()
 class ReportCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    connector_id: Optional[UUID] = None
+    config: Optional[dict] = None
 
 
 class ReportUpdate(BaseModel):
@@ -105,6 +108,40 @@ async def create_report(
     db.add(db_report)
     db.commit()
     db.refresh(db_report)
+    
+    # If Simple Mode config provided, generate code and create version
+    if report.config and report.config.get('mode') == 'simple':
+        source_table = report.config.get('source_table', '')
+        field_mappings = report.config.get('field_mappings', [])
+        output_format = report.config.get('output_format', 'xml')
+        schema_id = report.config.get('schema_id')
+        
+        # Generate Python code from mappings
+        generated_code = CodeGenerator.generate_from_mappings(
+            source_table=source_table,
+            field_mappings=field_mappings,
+            output_format=output_format,
+            schema_id=schema_id
+        )
+        
+        # Create initial version with generated code
+        db_version = models.ReportVersion(
+            report_id=db_report.id,
+            version_number=1,
+            python_code=generated_code,
+            connector_id=report.connector_id,
+            config=report.config,
+            status=models.ReportVersionStatus.DRAFT,
+            created_by=current_user.id
+        )
+        db.add(db_version)
+        db.commit()
+        db.refresh(db_version)
+        
+        # Set as current version
+        db_report.current_version_id = db_version.id
+        db.commit()
+        db.refresh(db_report)
     
     # Audit log
     log_audit(db, current_user, models.AuditAction.CREATE, "Report", str(db_report.id))

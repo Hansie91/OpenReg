@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # Encryption (Fernet key for credential encryption)
-    ENCRYPTION_KEY: str = "generate-a-fernet-key-in-production"
+    ENCRYPTION_KEY: str = "SA3MG87YRp8ErWD-l7-tIQgMCM2kpD5fCl7F4VL3uB8="  # Valid 32-byte base64 key
     
     # Application
     ENVIRONMENT: str = "development"

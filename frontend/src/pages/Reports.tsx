@@ -173,10 +173,29 @@ export default function Reports() {
         setEditorTab('code');
     };
 
-    const openEditModal = (report: Report) => {
+    const openEditModal = async (report: Report) => {
         setSelectedReport(report);
-        setPythonCode(DEFAULT_CODE); // TODO: Load from version
         setShowEditModal(true);
+
+        // Load saved code from version if available
+        if (report.current_version_id) {
+            try {
+                const versionsRes = await reportsAPI.getVersions(report.id);
+                const versions = versionsRes.data;
+                if (versions && versions.length > 0) {
+                    // Find the current version
+                    const currentVersion = versions.find((v: ReportVersion) => v.id === report.current_version_id) || versions[0];
+                    setPythonCode(currentVersion.python_code || DEFAULT_CODE);
+                    if (currentVersion.connector_id) {
+                        setConnectorId(currentVersion.connector_id);
+                    }
+                    return;
+                }
+            } catch (err) {
+                console.error('Failed to load report version:', err);
+            }
+        }
+        setPythonCode(DEFAULT_CODE);
     };
 
     const handleCreate = () => {

@@ -11,7 +11,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from config import settings
 from database import get_db
@@ -205,8 +205,11 @@ def decrypt_credentials(encrypted_credentials: bytes) -> dict:
     """Decrypt stored credentials"""
     import json
     cipher = get_cipher()
-    decrypted = cipher.decrypt(encrypted_credentials)
-    return json.loads(decrypted.decode())
+    try:
+        decrypted = cipher.decrypt(encrypted_credentials)
+        return json.loads(decrypted.decode())
+    except InvalidToken:
+        raise ValueError("Invalid encryption token. The secret key may have changed.")
 
 
 # === Audit Logging ===

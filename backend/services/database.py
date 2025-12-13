@@ -576,58 +576,81 @@ class DatabaseService:
         conn = None
         try:
             if db_type == 'postgresql':
-                import psycopg2
-                conn = psycopg2.connect(
-                    host=config.get('host'),
-                    port=config.get('port', 5432),
-                    database=config.get('database'),
-                    user=credentials.get('username'),
-                    password=credentials.get('password'),
-                    connect_timeout=30
-                )
+                try:
+                    import psycopg2
+                    conn = psycopg2.connect(
+                        host=config.get('host'),
+                        port=config.get('port', 5432),
+                        database=config.get('database'),
+                        user=credentials.get('username'),
+                        password=credentials.get('password'),
+                        connect_timeout=30
+                    )
+                except ImportError:
+                    raise DatabaseConnectionError("psycopg2 driver not installed")
             elif db_type == 'mysql':
-                import pymysql
-                conn = pymysql.connect(
-                    host=config.get('host'),
-                    port=int(config.get('port', 3306)),
-                    database=config.get('database'),
-                    user=credentials.get('username'),
-                    password=credentials.get('password'),
-                    connect_timeout=30
-                )
+                try:
+                    import pymysql
+                    conn = pymysql.connect(
+                        host=config.get('host'),
+                        port=int(config.get('port', 3306)),
+                        database=config.get('database'),
+                        user=credentials.get('username'),
+                        password=credentials.get('password'),
+                        connect_timeout=30
+                    )
+                except ImportError:
+                    raise DatabaseConnectionError("pymysql driver not installed")
             elif db_type == 'sqlserver':
-                import pyodbc
-                driver = config.get('driver', 'ODBC Driver 17 for SQL Server')
-                conn_str = (
-                    f"DRIVER={{{driver}}};"
-                    f"SERVER={config.get('host')},{config.get('port', 1433)};"
-                    f"DATABASE={config.get('database')};"
-                    f"UID={credentials.get('username')};"
-                    f"PWD={credentials.get('password')};"
-                )
-                conn = pyodbc.connect(conn_str)
+                try:
+                    import pyodbc
+                    driver = config.get('driver', 'ODBC Driver 17 for SQL Server')
+                    conn_str = (
+                        f"DRIVER={{{driver}}};"
+                        f"SERVER={config.get('host')},{config.get('port', 1433)};"
+                        f"DATABASE={config.get('database')};"
+                        f"UID={credentials.get('username')};"
+                        f"PWD={credentials.get('password')};"
+                    )
+                    conn = pyodbc.connect(conn_str)
+                except ImportError:
+                    raise DatabaseConnectionError("pyodbc driver not installed")
             elif db_type == 'oracle':
-                import oracledb
-                dsn = f"{config.get('host')}:{config.get('port', 1521)}/{config.get('database')}"
-                conn = oracledb.connect(
-                    user=credentials.get('username'),
-                    password=credentials.get('password'),
-                    dsn=dsn
-                )
+                try:
+                    import oracledb
+                    dsn = f"{config.get('host')}:{config.get('port', 1521)}/{config.get('database')}"
+                    conn = oracledb.connect(
+                        user=credentials.get('username'),
+                        password=credentials.get('password'),
+                        dsn=dsn
+                    )
+                except ImportError:
+                    raise DatabaseConnectionError("oracledb driver not installed")
             elif db_type == 'odbc':
-                import pyodbc
-                conn_str = config.get('connection_string', '')
-                conn_str = conn_str.replace('{username}', credentials.get('username', ''))
-                conn_str = conn_str.replace('{password}', credentials.get('password', ''))
-                conn = pyodbc.connect(conn_str)
+                try:
+                    import pyodbc
+                    conn_str = config.get('connection_string', '')
+                    conn_str = conn_str.replace('{username}', credentials.get('username', ''))
+                    conn_str = conn_str.replace('{password}', credentials.get('password', ''))
+                    conn = pyodbc.connect(conn_str)
+                except ImportError:
+                    raise DatabaseConnectionError("pyodbc driver not installed")
             else:
                 raise DatabaseConnectionError(f"Unsupported database type: {db_type}")
             
             yield conn
             
+        except DatabaseConnectionError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to {db_type}: {str(e)}")
+            raise DatabaseConnectionError(f"Failed to connect to {db_type} database: {str(e)}")
         finally:
             if conn:
-                conn.close()
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     
     @staticmethod
     def check_connection_health(
