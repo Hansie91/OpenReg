@@ -11,7 +11,7 @@ import logging
 from services.connectors.base import DatabaseConnector
 from services.connectors.postgresql import PostgreSQLConnector
 from services.database import DatabaseConnectionError
-from services.encryption import decrypt_credentials
+from services.auth import decrypt_credentials
 
 logger = logging.getLogger(__name__)
 

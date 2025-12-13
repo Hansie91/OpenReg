@@ -367,9 +367,9 @@ async def execute_report(
     db.commit()
     db.refresh(job_run)
     
-    # Enqueue to Celery (will be implemented in worker.py)
-    # For MVP, we'll return the job_run and implement async execution later
-    # background_tasks.add_task(execute_report_task, str(job_run.id))
+    # Enqueue to Celery for async execution
+    from worker import execute_report_task
+    execute_report_task.delay(str(job_run.id))
     
     # Audit log
     log_audit(db, current_user, models.AuditAction.EXECUTE, "Report", str(report.id),

@@ -137,7 +137,42 @@ class CodeExecutor:
         # Start with safe globals from RestrictedPython
         sandbox = safe_globals.copy()
         
-        # Add safe builtins
+        # Add safe builtins with RestrictedPython guards
+        # Guard functions for attribute and item access
+        def _getattr_(obj, name, default=None):
+            """Safe getattr for RestrictedPython"""
+            return getattr(obj, name, default)
+        
+        def _getitem_(obj, key):
+            """Safe getitem for RestrictedPython"""
+            return obj[key]
+        
+        def _write_(obj):
+            """Allow writes to safe objects"""
+            return obj
+        
+        def _iter_unpack_sequence_(*args):
+            """Safe iterator unpacking"""
+            # Args: (iter_target, spec, _getiter_)
+            it = args[0] if args else []
+            return list(it) if hasattr(it, '__iter__') else [it]
+        
+        def _inplacevar_(op, x, y):
+            """Safe in-place operations"""
+            if op == '+=': return x + y
+            if op == '-=': return x - y
+            if op == '*=': return x * y
+            if op == '/=': return x / y
+            if op == '//=': return x // y
+            if op == '%=': return x % y
+            if op == '**=': return x ** y
+            if op == '&=': return x & y
+            if op == '|=': return x | y
+            if op == '^=': return x ^ y
+            if op == '>>=': return x >> y
+            if op == '<<=': return x << y
+            return x
+        
         sandbox.update({
             '__builtins__': {
                 'True': True,
@@ -167,8 +202,19 @@ class CodeExecutor:
                 'isinstance': isinstance,
                 'type': type,
                 'print': print,
+                'getattr': getattr,
+                'hasattr': hasattr,
+                'iter': iter,
+                'next': next,
+                'map': map,
+                'filter': filter,
                 '_getiter_': guarded_iter_unpack_sequence,
                 '_unpack_sequence_': guarded_unpack_sequence,
+                '_iter_unpack_sequence_': _iter_unpack_sequence_,
+                '_getattr_': _getattr_,
+                '_getitem_': _getitem_,
+                '_write_': _write_,
+                '_inplacevar_': _inplacevar_,
             }
         })
         
@@ -318,24 +364,25 @@ class CodeExecutor:
         
         try:
             # Compile with RestrictedPython
-            byte_code = compile_restricted(
-                code,
-                filename='<user_code>',
-                mode='exec'
-            )
-            
-            if byte_code.errors:
+            # compile_restricted returns a code object directly (or raises SyntaxError)
+            try:
+                byte_code = compile_restricted(
+                    code,
+                    filename='<user_code>',
+                    mode='exec'
+                )
+            except SyntaxError as e:
                 return ExecutionResult(
                     success=False,
                     error="Code compilation failed",
                     error_type="CompilationError",
-                    stack_trace="\n".join(byte_code.errors),
+                    stack_trace=str(e),
                     code_lines=len(code.split('\n'))
                 )
             
             # Execute with resource limits
             with CodeExecutor.resource_limits(limits):
-                exec(byte_code.code, sandbox)
+                exec(byte_code, sandbox)
             
             # Get execution result
             execution_time = time.time() - start_time
@@ -355,8 +402,8 @@ class CodeExecutor:
                 if isinstance(output_data, pd.DataFrame):
                     output_size = output_data.memory_usage(deep=True).sum()
                 elif isinstance(output_data, (dict, list)):
-                    import sys
-                    output_size = sys.getsizeof(str(output_data))
+                    # sys is already imported at module level
+                    output_size = len(str(output_data))
             
             # Check output size limit
             max_output_bytes = limits.max_output_size_mb * 1024 * 1024

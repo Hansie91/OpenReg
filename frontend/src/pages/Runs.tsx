@@ -2,6 +2,9 @@ import { useQuery } from 'react-query';
 import { runsAPI, reportsAPI, api } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 
+// API URL for direct downloads (bypasses frontend routing)
+const API_URL = 'http://localhost:8000';
+
 interface Log {
     line_number: number;
     timestamp: string;
@@ -262,6 +265,7 @@ export default function Runs() {
                                 <th>Triggered By</th>
                                 <th>Started</th>
                                 <th>Duration</th>
+                                <th>Artifacts</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -285,6 +289,20 @@ export default function Runs() {
                                             ? `${((new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
                                             : '—'
                                         }
+                                    </td>
+                                    <td>
+                                        {run.artifact_count > 0 && run.first_artifact_id ? (
+                                            <button
+                                                onClick={() => window.open(`${API_URL}/api/v1/runs/${run.id}/artifacts/${run.first_artifact_id}/download`, '_blank')}
+                                                className="btn btn-ghost btn-sm text-indigo-600 hover:text-indigo-700"
+                                                title="Download Artifact"
+                                            >
+                                                <Icons.Download />
+                                                <span className="ml-1">{run.artifact_count}</span>
+                                            </button>
+                                        ) : (
+                                            <span className="text-gray-400">—</span>
+                                        )}
                                     </td>
                                     <td>
                                         <button
@@ -405,7 +423,10 @@ export default function Runs() {
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <button className="btn btn-secondary btn-sm">
+                                                <button
+                                                    onClick={() => window.open(`${API_URL}/api/v1/runs/${selectedRunId}/artifacts/${artifact.id}/download`, '_blank')}
+                                                    className="btn btn-secondary btn-sm"
+                                                >
                                                     <Icons.Download />
                                                     <span className="ml-1.5">Download</span>
                                                 </button>

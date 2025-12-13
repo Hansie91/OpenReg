@@ -107,6 +107,10 @@ export default function Reports() {
     const [pythonCode, setPythonCode] = useState(DEFAULT_CODE);
     const [connectorId, setConnectorId] = useState('');
     const [executing, setExecuting] = useState(false);
+    const [showExecuteModal, setShowExecuteModal] = useState(false);
+    const [executeReport, setExecuteReport] = useState<Report | null>(null);
+    const [businessDateFrom, setBusinessDateFrom] = useState(new Date().toISOString().split('T')[0]);
+    const [businessDateTo, setBusinessDateTo] = useState(new Date().toISOString().split('T')[0]);
 
     const { data: reports, isLoading } = useQuery('reports', () =>
         reportsAPI.list().then((res) => res.data)
@@ -215,18 +219,30 @@ export default function Reports() {
     };
 
     const handleExecute = async () => {
-        if (!selectedReport) return;
+        if (!executeReport) return;
 
         setExecuting(true);
         try {
-            await reportsAPI.execute(selectedReport.id);
+            await reportsAPI.execute(executeReport.id, {
+                business_date_from: businessDateFrom,
+                business_date_to: businessDateTo
+            });
             queryClient.invalidateQueries('recent-runs');
+            setShowExecuteModal(false);
+            setExecuteReport(null);
             alert('Report execution started! Check the Runs page for status.');
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Execution failed');
         } finally {
             setExecuting(false);
         }
+    };
+
+    const openExecuteModal = (report: Report) => {
+        setExecuteReport(report);
+        setBusinessDateFrom(new Date().toISOString().split('T')[0]);
+        setBusinessDateTo(new Date().toISOString().split('T')[0]);
+        setShowExecuteModal(true);
     };
 
     return (
@@ -294,10 +310,7 @@ export default function Reports() {
                                                 <Icons.Code />
                                             </button>
                                             <button
-                                                onClick={() => {
-                                                    setSelectedReport(report);
-                                                    handleExecute();
-                                                }}
+                                                onClick={() => openExecuteModal(report)}
                                                 className="btn btn-ghost btn-icon text-emerald-600"
                                                 title="Execute"
                                             >
@@ -637,6 +650,72 @@ export default function Reports() {
                                 className="btn btn-danger"
                             >
                                 {deleteMutation.isLoading ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Execute Report Modal with Date Selection */}
+            {showExecuteModal && executeReport && (
+                <div className="modal-overlay" onClick={() => setShowExecuteModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Execute Report</h3>
+                            <button onClick={() => setShowExecuteModal(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <p className="text-gray-600">
+                                Execute <strong>{executeReport.name}</strong> with the following parameters:
+                            </p>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="input-label">Business Date From</label>
+                                    <input
+                                        type="date"
+                                        className="input"
+                                        value={businessDateFrom}
+                                        onChange={(e) => setBusinessDateFrom(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="input-label">Business Date To</label>
+                                    <input
+                                        type="date"
+                                        className="input"
+                                        value={businessDateTo}
+                                        onChange={(e) => setBusinessDateTo(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                                <strong>Tip:</strong> For a single day report, set both dates to the same value.
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowExecuteModal(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleExecute}
+                                disabled={executing}
+                                className="btn btn-success"
+                            >
+                                {executing ? (
+                                    <span className="flex items-center gap-2">
+                                        <div className="spinner"></div>
+                                        Executing...
+                                    </span>
+                                ) : (
+                                    <>
+                                        <Icons.Play />
+                                        <span className="ml-1">Execute Report</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>

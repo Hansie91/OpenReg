@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 # Create Celery app
 app = Celery(
     "openreg_worker",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND
+    broker=settings.celery_broker,
+    backend=settings.celery_backend
 )
 
 # Celery configuration
@@ -91,6 +91,7 @@ def execute_report_task(job_run_id: str):
         # Get connector if specified
         connector_instance = None
         connector_config = {}
+        connector_credentials = {}
         connector_type = "postgresql"  # default
         
         if report_version.connector_id:
@@ -101,6 +102,14 @@ def execute_report_task(job_run_id: str):
             if connector:
                 connector_config = connector.config
                 connector_type = connector.type.value
+                
+                # Decrypt credentials for use in query_db
+                from services.auth import decrypt_credentials
+                try:
+                    connector_credentials = decrypt_credentials(connector.encrypted_credentials)
+                except Exception as e:
+                    logger.error(f"Failed to decrypt credentials: {e}")
+                    connector_credentials = {}
                 
                 # Create connector instance using factory
                 connector_instance = ConnectorFactory.create_connector(
@@ -113,16 +122,19 @@ def execute_report_task(job_run_id: str):
         mappings = {}
         
         # Create execution context
+        # Note: query_sql may not exist on ReportVersion - use getattr with None default
+        query_sql = getattr(report_version, 'query_sql', None) or report_version.config.get('query_sql')
+        
         context = ExecutionContext(
             connector_type=connector_type,
             connector_config=connector_config,
-            connector_credentials={},  # Credentials handled by connector_instance
+            connector_credentials=connector_credentials,  # Pass decrypted credentials for query_db
             mappings=mappings,
             parameters=job_run.parameters or {},
             report_version_id=report_version.id,
             job_run_id=UUID(job_run_id),
             tenant_id=job_run.tenant_id,
-            query_sql=report_version.query_sql  # If report has a base query
+            query_sql=query_sql
         )
         
         # Get pre-generation validation rules
@@ -133,13 +145,13 @@ def execute_report_task(job_run_id: str):
         
         pre_gen_rules = [v.validation_rule for v in pre_gen_validations if v.validation_rule.is_active]
         
-        # Fetch source data using connector
+        # Fetch source data using connector (only if query_sql is provided)
         source_data = None
-        if connector_instance and report_version.query_sql:
+        if connector_instance and query_sql:
             logger.info("Fetching data from database...")
             try:
                 results = connector_instance.execute_query(
-                    query=report_version.query_sql,
+                    query=query_sql,
                     timeout=300  # 5 minute timeout
                 )
                 source_data = pd.DataFrame(results)
@@ -229,6 +241,16 @@ def execute_report_task(job_run_id: str):
         
         # Run pre-delivery validations on output
         final_output = result.output_data
+        
+        # Convert list/dict to DataFrame if needed
+        if final_output is not None:
+            if isinstance(final_output, list) and len(final_output) > 0:
+                logger.info(f"Converting list of {len(final_output)} records to DataFrame")
+                final_output = pd.DataFrame(final_output)
+            elif isinstance(final_output, dict):
+                logger.info("Converting dict to DataFrame")
+                final_output = pd.DataFrame([final_output])
+        
         if pre_delivery_rules and final_output is not None:
             import pandas as pd
             if isinstance(final_output, pd.DataFrame):

@@ -79,6 +79,16 @@ async def list_runs(
             models.Report.id == version.report_id
         ).first() if version else None
         
+        # Get artifact count
+        artifact_count = db.query(models.Artifact).filter(
+            models.Artifact.job_run_id == run.id
+        ).count()
+        
+        # Get first artifact ID for quick download
+        first_artifact = db.query(models.Artifact).filter(
+            models.Artifact.job_run_id == run.id
+        ).first()
+        
         results.append({
             "id": run.id,
             "report_id": report.id if report else None,
@@ -89,7 +99,9 @@ async def list_runs(
             "started_at": run.started_at,
             "ended_at": run.ended_at,
             "error_message": run.error_message,
-            "created_at": run.created_at
+            "created_at": run.created_at,
+            "artifact_count": artifact_count,
+            "first_artifact_id": str(first_artifact.id) if first_artifact else None
         })
     
     return {
@@ -229,5 +241,67 @@ async def get_run_details(
 
 
 # TODO: Implement
-# - GET /{run_id}/artifacts/{artifact_id}/download - Download artifact
 # - POST /{run_id}/rerun - Rerun job
+
+
+@router.get("/{run_id}/artifacts/{artifact_id}/download")
+async def download_artifact(
+    run_id: UUID,
+    artifact_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Download an artifact file from MinIO storage"""
+    from fastapi.responses import StreamingResponse
+    from services.storage import StorageService
+    import io
+    
+    # Verify run belongs to tenant
+    run = db.query(models.JobRun).filter(
+        models.JobRun.id == run_id,
+        models.JobRun.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Job run not found")
+    
+    # Get artifact
+    artifact = db.query(models.Artifact).filter(
+        models.Artifact.id == artifact_id,
+        models.Artifact.job_run_id == run_id
+    ).first()
+    
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    
+    # Download from storage
+    try:
+        storage = StorageService()
+        
+        # Parse storage_uri to get object_name
+        # Format could be: 
+        #   s3://bucket/object_name
+        #   bucket/object_name (most common from our upload)
+        storage_uri = artifact.storage_uri
+        if storage_uri.startswith('s3://'):
+            # Remove s3:// prefix and get object name after bucket
+            parts = storage_uri[5:].split('/', 1)
+            object_name = parts[1] if len(parts) > 1 else parts[0]
+        elif '/' in storage_uri:
+            # Format: bucket/object_name - just get the object name part
+            parts = storage_uri.split('/', 1)
+            object_name = parts[1] if len(parts) > 1 else storage_uri
+        else:
+            object_name = storage_uri
+        
+        data = storage.download_artifact(object_name)
+        
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type=artifact.mime_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{artifact.filename}"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download artifact: {str(e)}")

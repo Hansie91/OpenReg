@@ -116,6 +116,9 @@ class CodeGenerator:
             '    ',
             '    log(f"Generated {len(results)} output records")',
             '    return results',
+            '',
+            '# Execute the transform function and store result',
+            'result = transform(None, None, parameters)',
         ])
         
         return '\n'.join(code_parts)

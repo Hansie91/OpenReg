@@ -40,9 +40,19 @@ class Settings(BaseSettings):
         """Get CORS origins as a list"""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(',') if origin.strip()]
     
-    # Celery
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Celery - use REDIS_URL by default if not explicitly set
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
+    
+    @property
+    def celery_broker(self) -> str:
+        """Get Celery broker URL, defaulting to REDIS_URL"""
+        return self.CELERY_BROKER_URL or self.REDIS_URL
+    
+    @property
+    def celery_backend(self) -> str:
+        """Get Celery result backend URL, defaulting to REDIS_URL"""
+        return self.CELERY_RESULT_BACKEND or self.REDIS_URL
     
     # Database Connection Pooling
     DB_POOL_MIN_CONNECTIONS: int = 2
