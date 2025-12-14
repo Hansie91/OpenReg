@@ -5,7 +5,7 @@ import logging
 
 from database import engine, Base
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -69,6 +69,8 @@ app.include_router(logs.router, prefix=f"{API_PREFIX}/runs", tags=["Log Streamin
 app.include_router(submissions.router, prefix=f"{API_PREFIX}/submissions", tags=["Submissions"])
 app.include_router(admin.router, prefix=f"{API_PREFIX}/admin", tags=["Administration"])
 app.include_router(schemas.router, prefix=f"{API_PREFIX}/schemas", tags=["Schemas"])
+app.include_router(dashboard.router, prefix=f"{API_PREFIX}/dashboard", tags=["Dashboard"])
+app.include_router(xbrl.router, prefix=f"{API_PREFIX}/xbrl", tags=["XBRL Taxonomies"])
 
 
 @app.get("/")

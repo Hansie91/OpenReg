@@ -140,6 +140,21 @@ class AuditAction(str, enum.Enum):
     EXECUTE = "execute"
 
 
+class SchemaType(str, enum.Enum):
+    """Type of schema definition file"""
+    XSD = "xsd"                   # XML Schema Definition
+    JSON_SCHEMA = "json_schema"   # JSON Schema
+    XBRL = "xbrl"                 # XBRL Taxonomy
+
+
+class OutputFormat(str, enum.Enum):
+    """Output format for generated reports"""
+    XML = "xml"
+    JSON = "json"
+    CSV = "csv"
+    TXT = "txt"  # Fixed-width text
+
+
 # === Base Mixin ===
 
 class TimestampMixin:
@@ -253,10 +268,41 @@ class ReportVersion(Base, TimestampMixin):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id"), nullable=False, index=True)
-    version_number = Column(Integer, nullable=False)
+    
+    # Semantic versioning: major.minor (e.g., 1.0, 1.1, 2.0)
+    major_version = Column(Integer, nullable=False, default=1)
+    minor_version = Column(Integer, nullable=False, default=0)
+    version_number = Column(Integer, nullable=False)  # Computed: major*1000 + minor for ordering
+    
     python_code = Column(Text, nullable=False)  # User-authored transformation logic
     connector_id = Column(UUID(as_uuid=True), ForeignKey("connectors.id"), nullable=True)
-    config = Column(JSONB, default={})  # {output_format: "xml", schemas, etc.}
+    
+    # Extended config JSONB schema:
+    # {
+    #   "mode": "simple" | "advanced",
+    #   "input_schema_type": "xsd" | "json_schema" | "xbrl",
+    #   "schema_id": "uuid",
+    #   "xbrl_taxonomy_id": "uuid",
+    #   "output_format": "xml" | "json" | "csv" | "txt",
+    #   "output_filename_template": "{report_name}_{business_date}",
+    #   "max_records_per_file": 10000,
+    #   "max_file_size_bytes": 104857600,
+    #   "csv_options": {
+    #     "delimiter": ",",
+    #     "quote_char": "\"",
+    #     "escape_char": "\\",
+    #     "include_header": true,
+    #     "line_ending": "crlf"
+    #   },
+    #   "txt_options": {
+    #     "columns": [{"field": "name", "start_position": 1, "length": 20, "padding": "right", "padding_char": " "}],
+    #     "record_length": 200,
+    #     "line_ending": "crlf"
+    #   },
+    #   "field_mappings": [...]
+    # }
+    config = Column(JSONB, default={})  
+    
     status = Column(Enum(ReportVersionStatus), default=ReportVersionStatus.DRAFT, nullable=False)
     approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
@@ -267,6 +313,11 @@ class ReportVersion(Base, TimestampMixin):
     connector = relationship("Connector", back_populates="report_versions")
     validations = relationship("ReportValidation", back_populates="report_version", cascade="all, delete-orphan")
     job_runs = relationship("JobRun", back_populates="report_version")
+    
+    @property
+    def version_string(self) -> str:
+        """Return semantic version string (e.g., 'v1.2')"""
+        return f"v{self.major_version}.{self.minor_version}"
 
 
 class ReportValidation(Base):
@@ -303,6 +354,79 @@ class ReportSchema(Base, TimestampMixin):
     parsed_elements = Column(JSONB, nullable=True)  # Cached parsed structure
     root_element = Column(String(255), nullable=True)  # Main root element name
     namespace = Column(String(500), nullable=True)  # Target namespace
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    tenant = relationship("Tenant")
+
+
+class XBRLTaxonomy(Base, TimestampMixin):
+    """
+    Stores XBRL taxonomy with full linkbase support.
+    
+    XBRL taxonomies define concepts (elements), their relationships,
+    dimensions for multi-dimensional reporting, and human-readable labels.
+    """
+    __tablename__ = "xbrl_taxonomies"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)  # e.g., "ESEF 2023"
+    description = Column(Text, nullable=True)
+    version = Column(String(50), nullable=True)  # Taxonomy version
+    
+    # Entry point and namespace
+    entry_point_uri = Column(String(500), nullable=True)  # Main XSD entry point
+    namespace = Column(String(500), nullable=False)       # Target namespace
+    
+    # Core taxonomy structure (parsed and cached)
+    concepts = Column(JSONB, default=[])  # List of concept definitions
+    # [{
+    #   "name": "Assets",
+    #   "id": "ifrs-full_Assets",
+    #   "type": "monetaryItemType",
+    #   "period_type": "instant",  # instant | duration
+    #   "balance": "debit",       # debit | credit | null
+    #   "abstract": false,
+    #   "nillable": true,
+    #   "substitution_group": "xbrli:item"
+    # }]
+    
+    # Dimension definitions for multi-dimensional facts
+    dimensions = Column(JSONB, default=[])
+    # [{
+    #   "name": "CurrencyDimension",
+    #   "id": "ifrs-full_CurrencyDimension",
+    #   "type": "explicit",  # explicit | typed
+    #   "domain": "CurrencyDomain",
+    #   "members": ["EUR", "USD", "GBP", ...]
+    # }]
+    
+    # Linkbases - relationships between concepts
+    presentation_linkbase = Column(JSONB, default={})
+    # Hierarchical structure for presentation
+    # {"role": {"parent": ["child1", "child2"], ...}}
+    
+    calculation_linkbase = Column(JSONB, default={})
+    # Calculation relationships (summations)
+    # {"role": {"total": [{"concept": "part1", "weight": 1.0}, ...]}}
+    
+    definition_linkbase = Column(JSONB, default={})
+    # Dimensional relationships (hypercubes, dimension-domain)
+    # {"role": {"hypercube": {"dimensions": [...], "members": [...]}}}
+    
+    label_linkbase = Column(JSONB, default={})
+    # Human-readable labels in multiple languages
+    # {"concept_id": {"en": "Assets", "de": "Vermögenswerte", ...}}
+    
+    reference_linkbase = Column(JSONB, default={})
+    # References to authoritative literature
+    # {"concept_id": [{"standard": "IAS 1", "paragraph": "55"}]}
+    
+    # Original raw files for reference
+    raw_files = Column(JSONB, default={})  # {filename: content or reference}
+    
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     

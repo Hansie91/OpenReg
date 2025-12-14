@@ -16,7 +16,10 @@ interface Report {
 interface ReportVersion {
     id: string;
     report_id: string;
+    major_version: number;
+    minor_version: number;
     version_number: number;
+    version_string: string;
     python_code: string;
     connector_id: string | null;
     config: Record<string, any>;
@@ -61,6 +64,16 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
         </svg>
     ),
+    Maximize: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+    ),
+    Minimize: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
+        </svg>
+    ),
 };
 
 const DEFAULT_CODE = `"""
@@ -97,9 +110,14 @@ export default function Reports() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
-    const [editorTab, setEditorTab] = useState<'code' | 'history'>('code');
+    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config'>('code');
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [bumpMajor, setBumpMajor] = useState(false);
+    const [currentVersion, setCurrentVersion] = useState<ReportVersion | null>(null);
 
     // Form state
     const [name, setName] = useState('');
@@ -111,6 +129,13 @@ export default function Reports() {
     const [executeReport, setExecuteReport] = useState<Report | null>(null);
     const [businessDateFrom, setBusinessDateFrom] = useState(new Date().toISOString().split('T')[0]);
     const [businessDateTo, setBusinessDateTo] = useState(new Date().toISOString().split('T')[0]);
+
+    // Output format config
+    const [outputFormat, setOutputFormat] = useState('xml');
+    const [maxRecords, setMaxRecords] = useState<number | null>(null);
+    const [csvDelimiter, setCsvDelimiter] = useState(',');
+    const [csvQuote, setCsvQuote] = useState('"');
+    const [csvHeader, setCsvHeader] = useState(true);
 
     const { data: reports, isLoading } = useQuery('reports', () =>
         reportsAPI.list().then((res) => res.data)
@@ -133,6 +158,13 @@ export default function Reports() {
         { enabled: !!selectedReport }
     );
 
+    // Fetch version history
+    const { data: reportVersions } = useQuery(
+        ['report-versions', selectedReport?.id],
+        () => selectedReport ? reportsAPI.getVersions(selectedReport.id).then((res) => res.data) : null,
+        { enabled: !!selectedReport }
+    );
+
     const createMutation = useMutation(
         (data: any) => reportsAPI.create(data),
         {
@@ -148,6 +180,29 @@ export default function Reports() {
         {
             onSuccess: () => {
                 queryClient.invalidateQueries('reports');
+            },
+        }
+    );
+
+    const createVersionMutation = useMutation(
+        ({ reportId, data }: { reportId: string; data: any }) =>
+            reportsAPI.createVersion(reportId, data),
+        {
+            onSuccess: async (response, variables) => {
+                // After creating version, set it as current and reload
+                const newVersion = response.data;
+                // Approve the new version to make it current
+                try {
+                    await reportsAPI.updateVersion(variables.reportId, newVersion.id, {
+                        approve: true
+                    });
+                } catch (err) {
+                    console.log('Version created, approval may be manual');
+                }
+                queryClient.invalidateQueries('reports');
+                queryClient.invalidateQueries(['report-versions', variables.reportId]);
+                // Update current version state
+                setCurrentVersion(newVersion);
             },
         }
     );
@@ -180,6 +235,8 @@ export default function Reports() {
     const openEditModal = async (report: Report) => {
         setSelectedReport(report);
         setShowEditModal(true);
+        setHasUnsavedChanges(false);
+        setBumpMajor(false);
 
         // Load saved code from version if available
         if (report.current_version_id) {
@@ -188,10 +245,21 @@ export default function Reports() {
                 const versions = versionsRes.data;
                 if (versions && versions.length > 0) {
                     // Find the current version
-                    const currentVersion = versions.find((v: ReportVersion) => v.id === report.current_version_id) || versions[0];
-                    setPythonCode(currentVersion.python_code || DEFAULT_CODE);
-                    if (currentVersion.connector_id) {
-                        setConnectorId(currentVersion.connector_id);
+                    const ver = versions.find((v: ReportVersion) => v.id === report.current_version_id) || versions[0];
+                    setCurrentVersion(ver);
+                    setPythonCode(ver.python_code || DEFAULT_CODE);
+                    if (ver.connector_id) {
+                        setConnectorId(ver.connector_id);
+                    }
+                    // Load config
+                    if (ver.config) {
+                        setOutputFormat(ver.config.output_format || 'xml');
+                        setMaxRecords(ver.config.max_records_per_file || null);
+                        if (ver.config.csv_options) {
+                            setCsvDelimiter(ver.config.csv_options.delimiter || ',');
+                            setCsvQuote(ver.config.csv_options.quote_char || '"');
+                            setCsvHeader(ver.config.csv_options.include_header !== false);
+                        }
                     }
                     return;
                 }
@@ -199,6 +267,7 @@ export default function Reports() {
                 console.error('Failed to load report version:', err);
             }
         }
+        setCurrentVersion(null);
         setPythonCode(DEFAULT_CODE);
     };
 
@@ -208,14 +277,34 @@ export default function Reports() {
 
     const handleSaveCode = () => {
         if (!selectedReport) return;
+        // Show confirmation modal
+        setShowSaveConfirm(true);
+    };
 
-        updateMutation.mutate({
-            id: selectedReport.id,
+    const handleConfirmSave = () => {
+        if (!selectedReport) return;
+        setShowSaveConfirm(false);
+
+        // Create a NEW version instead of updating report metadata
+        createVersionMutation.mutate({
+            reportId: selectedReport.id,
             data: {
                 python_code: pythonCode,
                 connector_id: connectorId || null,
+                bump_major: bumpMajor,
+                config: {
+                    output_format: outputFormat,
+                    max_records_per_file: maxRecords,
+                    csv_options: outputFormat === 'csv' ? {
+                        delimiter: csvDelimiter,
+                        quote_char: csvQuote,
+                        include_header: csvHeader
+                    } : undefined
+                }
             },
         });
+        setHasUnsavedChanges(false);
+        setBumpMajor(false);
     };
 
     const handleExecute = async () => {
@@ -291,8 +380,14 @@ export default function Reports() {
                                         </span>
                                     </td>
                                     <td>
-                                        {report.current_version_id ? (
-                                            <span className="badge badge-info">v1</span>
+                                        {(report as any).version_string ? (
+                                            <span className="badge badge-info">
+                                                {(report as any).version_string}
+                                            </span>
+                                        ) : report.current_version_id ? (
+                                            <span className="badge badge-info">
+                                                v{(report as any).major_version || 1}.{(report as any).minor_version || 0}
+                                            </span>
                                         ) : (
                                             <span className="badge badge-warning">Draft</span>
                                         )}
@@ -411,7 +506,10 @@ export default function Reports() {
             {showEditModal && selectedReport && (
                 <div className="modal-overlay" onClick={closeEditModal}>
                     <div
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+                        className={`bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col ${isFullscreen
+                            ? 'fixed inset-4 max-w-none max-h-none'
+                            : 'w-full max-w-[90vw] max-h-[90vh]'
+                            }`}
                         onClick={(e) => e.stopPropagation()}
                         style={{ animation: 'modalSlideIn 0.2s ease-out' }}
                     >
@@ -422,9 +520,18 @@ export default function Reports() {
                                     Edit and view execution history
                                 </p>
                             </div>
-                            <button onClick={closeEditModal} className="btn btn-ghost btn-icon">
-                                <Icons.Close />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setIsFullscreen(!isFullscreen)}
+                                    className="btn btn-ghost btn-icon"
+                                    title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                                >
+                                    {isFullscreen ? <Icons.Minimize /> : <Icons.Maximize />}
+                                </button>
+                                <button onClick={closeEditModal} className="btn btn-ghost btn-icon">
+                                    <Icons.Close />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Tabs */}
@@ -439,14 +546,29 @@ export default function Reports() {
                                 Code Editor
                             </button>
                             <button
+                                onClick={() => setEditorTab('config')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'config'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Output Config
+                            </button>
+                            <button
                                 onClick={() => setEditorTab('history')}
                                 className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'history'
                                     ? 'text-indigo-600 border-b-2 border-indigo-600'
                                     : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
-                                Execution History
+                                Version History
                             </button>
+                            {hasUnsavedChanges && (
+                                <span className="ml-auto text-sm text-amber-600 flex items-center">
+                                    <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
+                                    Unsaved changes
+                                </span>
+                            )}
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
@@ -458,10 +580,13 @@ export default function Reports() {
                                             height="100%"
                                             defaultLanguage="python"
                                             value={pythonCode}
-                                            onChange={(value) => setPythonCode(value || '')}
+                                            onChange={(value) => {
+                                                setPythonCode(value || '');
+                                                setHasUnsavedChanges(true);
+                                            }}
                                             theme="vs-light"
                                             options={{
-                                                minimap: { enabled: false },
+                                                minimap: { enabled: true },
                                                 fontSize: 14,
                                                 lineNumbers: 'on',
                                                 scrollBeyondLastLine: false,
@@ -521,7 +646,64 @@ export default function Reports() {
                             {/* History Tab */}
                             {editorTab === 'history' && (
                                 <div className="flex-1 p-6 overflow-y-auto">
+                                    {/* Version History Section */}
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Version History</h4>
+                                    {reportVersions && reportVersions.length > 0 ? (
+                                        <div className="table-container mb-8">
+                                            <table className="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Version</th>
+                                                        <th>Status</th>
+                                                        <th>Created</th>
+                                                        <th>Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {reportVersions.map((ver: ReportVersion) => (
+                                                        <tr key={ver.id} className={ver.id === selectedReport?.current_version_id ? 'bg-indigo-50' : ''}>
+                                                            <td>
+                                                                <span className={`badge ${ver.id === selectedReport?.current_version_id ? 'badge-primary' : 'badge-info'}`}>
+                                                                    {ver.version_string || `v${ver.major_version || 1}.${ver.minor_version || 0}`}
+                                                                </span>
+                                                                {ver.id === selectedReport?.current_version_id && (
+                                                                    <span className="ml-2 text-xs text-indigo-600">Current</span>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                <span className={`badge badge-${ver.status === 'active' ? 'success' : ver.status === 'draft' ? 'warning' : 'gray'}`}>
+                                                                    {ver.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="text-gray-600 text-sm">
+                                                                {new Date(ver.created_at).toLocaleString()}
+                                                            </td>
+                                                            <td>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setPythonCode(ver.python_code);
+                                                                        setCurrentVersion(ver);
+                                                                        setEditorTab('code');
+                                                                    }}
+                                                                    className="btn btn-ghost btn-sm text-indigo-600"
+                                                                >
+                                                                    View Code
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500 mb-8 bg-gray-50 rounded-lg">
+                                            <p>No versions yet</p>
+                                            <p className="text-sm mt-1">Save your code to create the first version</p>
+                                        </div>
+                                    )}
+
                                     {/* Statistics Cards */}
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Execution Statistics</h4>
                                     {reportStats && (
                                         <div className="grid grid-cols-3 gap-4 mb-6">
                                             <div className="card p-4">
@@ -585,7 +767,7 @@ export default function Reports() {
                                             </table>
                                         </div>
                                     ) : (
-                                        <div className="text-center py-12 text-gray-500">
+                                        <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
                                             <p>No executions yet</p>
                                             <p className="text-sm mt-1">Execute this report to see history</p>
                                         </div>
@@ -716,6 +898,76 @@ export default function Reports() {
                                         <span className="ml-1">Execute Report</span>
                                     </>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Save Confirmation Modal */}
+            {showSaveConfirm && (
+                <div className="modal-overlay" onClick={() => setShowSaveConfirm(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Save Changes?</h3>
+                            <button onClick={() => setShowSaveConfirm(false)} className="btn btn-ghost btn-icon">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                        <div className="modal-body space-y-4">
+                            <p className="text-gray-600">
+                                This will create a new version of <strong>{selectedReport?.name}</strong>.
+                            </p>
+
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-gray-600">Current Version:</span>
+                                    <span className="badge badge-info">
+                                        {currentVersion
+                                            ? `v${currentVersion.major_version || 1}.${currentVersion.minor_version || 0}`
+                                            : 'None (new report)'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-2">
+                                    <span className="text-gray-600">New Version:</span>
+                                    <span className="badge badge-success">
+                                        {currentVersion
+                                            ? `v${bumpMajor ? (currentVersion.major_version || 1) + 1 : (currentVersion.major_version || 1)}.${bumpMajor ? 0 : (currentVersion.minor_version || 0) + 1}`
+                                            : 'v1.0'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                <input
+                                    type="checkbox"
+                                    id="bumpMajor"
+                                    checked={bumpMajor}
+                                    onChange={(e) => setBumpMajor(e.target.checked)}
+                                    className="rounded"
+                                />
+                                <label htmlFor="bumpMajor" className="text-sm text-amber-800">
+                                    <strong>Major version bump</strong> — Use for breaking changes
+                                </label>
+                            </div>
+
+                            <p className="text-sm text-gray-500">
+                                Previous versions remain available in the version history.
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowSaveConfirm(false)} className="btn btn-secondary">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmSave}
+                                disabled={createVersionMutation.isLoading}
+                                className="btn btn-primary"
+                            >
+                                {createVersionMutation.isLoading ? 'Saving...' : `Save as ${currentVersion
+                                    ? `v${bumpMajor ? (currentVersion.major_version || 1) + 1 : (currentVersion.major_version || 1)}.${bumpMajor ? 0 : (currentVersion.minor_version || 0) + 1}`
+                                    : 'v1.0'
+                                    }`}
                             </button>
                         </div>
                     </div>

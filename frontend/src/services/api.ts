@@ -211,3 +211,34 @@ export const schemasAPI = {
         });
     },
 };
+
+// Dashboard API
+export const dashboardAPI = {
+    getDailySummary: (businessDate?: string) =>
+        api.get('/dashboard/daily-summary', { params: { business_date: businessDate } }),
+    getPreviousBusinessDate: (referenceDate?: string) =>
+        api.get('/dashboard/previous-business-date', { params: { reference_date: referenceDate } }),
+};
+
+// XBRL Taxonomy API
+export const xbrlAPI = {
+    upload: (file: File, name?: string, description?: string, version?: string) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/xbrl/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            params: { name, description, version }
+        });
+    },
+    list: (isActive?: boolean) =>
+        api.get('/xbrl', { params: { is_active: isActive } }),
+    get: (id: string) => api.get(`/xbrl/${id}`),
+    delete: (id: string) => api.delete(`/xbrl/${id}`),
+    getConcepts: (id: string, search?: string, abstractOnly?: boolean) =>
+        api.get(`/xbrl/${id}/concepts`, { params: { search, abstract_only: abstractOnly } }),
+    getDimensions: (id: string) => api.get(`/xbrl/${id}/dimensions`),
+    getPresentation: (id: string, role?: string) =>
+        api.get(`/xbrl/${id}/presentation`, { params: { role } }),
+    getCalculation: (id: string) => api.get(`/xbrl/${id}/calculation`),
+    getDefinition: (id: string) => api.get(`/xbrl/${id}/definition`),
+};

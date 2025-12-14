@@ -38,6 +38,10 @@ class ReportResponse(BaseModel):
     name: str
     description: Optional[str]
     current_version_id: Optional[UUID]
+    # Version info from current version
+    major_version: Optional[int] = None
+    minor_version: Optional[int] = None
+    version_string: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -50,12 +54,16 @@ class ReportVersionCreate(BaseModel):
     python_code: str
     connector_id: Optional[UUID] = None
     config: Optional[dict] = {}
+    bump_major: bool = False  # If True, increment major version (v2.0, v3.0)
 
 
 class ReportVersionResponse(BaseModel):
     id: UUID
     report_id: UUID
+    major_version: int
+    minor_version: int
     version_number: int
+    version_string: str
     python_code: str
     connector_id: Optional[UUID]
     config: dict
@@ -89,7 +97,51 @@ async def list_reports(
         query = query.filter(models.Report.is_active == is_active)
     
     reports = query.offset(skip).limit(limit).all()
-    return reports
+    
+    # Enrich with version info
+    result = []
+    for report in reports:
+        report_dict = {
+            'id': report.id,
+            'tenant_id': report.tenant_id,
+            'name': report.name,
+            'description': report.description,
+            'current_version_id': report.current_version_id,
+            'is_active': report.is_active,
+            'created_at': report.created_at,
+            'updated_at': report.updated_at,
+            'major_version': None,
+            'minor_version': None,
+            'version_string': None,
+        }
+        
+        # Get current version info if available
+        if report.current_version_id:
+            try:
+                current_version = db.query(models.ReportVersion).filter(
+                    models.ReportVersion.id == report.current_version_id
+                ).first()
+                if current_version:
+                    # Handle both old (version_number) and new (major/minor) schema
+                    major = getattr(current_version, 'major_version', None)
+                    minor = getattr(current_version, 'minor_version', None)
+                    if major is not None and minor is not None:
+                        report_dict['major_version'] = major
+                        report_dict['minor_version'] = minor
+                        report_dict['version_string'] = f"v{major}.{minor}"
+                    else:
+                        # Fallback for old schema
+                        vn = getattr(current_version, 'version_number', 1)
+                        report_dict['major_version'] = 1
+                        report_dict['minor_version'] = vn - 1 if vn > 0 else 0
+                        report_dict['version_string'] = f"v1.{vn - 1 if vn > 0 else 0}"
+            except Exception:
+                # If any error, just use defaults
+                pass
+        
+        result.append(report_dict)
+    
+    return result
 
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -127,7 +179,9 @@ async def create_report(
         # Create initial version with generated code
         db_version = models.ReportVersion(
             report_id=db_report.id,
-            version_number=1,
+            major_version=1,
+            minor_version=0,
+            version_number=1000,  # 1*1000 + 0
             python_code=generated_code,
             connector_id=report.connector_id,
             config=report.config,
@@ -243,7 +297,19 @@ async def list_report_versions(
         models.ReportVersion.report_id == report_id
     ).order_by(models.ReportVersion.version_number.desc()).all()
     
-    return versions
+    # Add version_string to each version with fallback
+    result = []
+    for v in versions:
+        major = getattr(v, 'major_version', None) or 1
+        minor = getattr(v, 'minor_version', None) or 0
+        result.append({
+            **v.__dict__,
+            'major_version': major,
+            'minor_version': minor,
+            'version_string': f"v{major}.{minor}"
+        })
+    
+    return result
 
 
 @router.post("/{report_id}/versions", response_model=ReportVersionResponse, status_code=status.HTTP_201_CREATED)
@@ -263,30 +329,54 @@ async def create_report_version(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     
-    # Get next version number
-    max_version = db.query(models.ReportVersion).filter(
+    # Get latest version for semantic versioning
+    latest = db.query(models.ReportVersion).filter(
         models.ReportVersion.report_id == report_id
-    ).count()
-    next_version = max_version + 1
+    ).order_by(
+        models.ReportVersion.major_version.desc(),
+        models.ReportVersion.minor_version.desc()
+    ).first()
+    
+    # Calculate next version
+    if version.bump_major:
+        new_major = (latest.major_version if latest else 0) + 1
+        new_minor = 0
+    else:
+        new_major = latest.major_version if latest else 1
+        new_minor = (latest.minor_version if latest else -1) + 1
+    
+    version_number = new_major * 1000 + new_minor
     
     # Create version
     db_version = models.ReportVersion(
         report_id=report_id,
-        version_number=next_version,
+        major_version=new_major,
+        minor_version=new_minor,
+        version_number=version_number,
         python_code=version.python_code,
         connector_id=version.connector_id,
         config=version.config,
-        status=models.ReportVersionStatus.DRAFT,
-        created_by=current_user.id
+        status=models.ReportVersionStatus.ACTIVE,  # Auto-approve
+        created_by=current_user.id,
+        approved_by=current_user.id,
+        approved_at=datetime.utcnow()
     )
     db.add(db_version)
     db.commit()
     db.refresh(db_version)
     
+    # Set as current version
+    report.current_version_id = db_version.id
+    db.commit()
+    
     # Audit log
     log_audit(db, current_user, models.AuditAction.CREATE, "ReportVersion", str(db_version.id))
     
-    return db_version
+    # Return with version_string
+    return {
+        **db_version.__dict__,
+        'version_string': f"v{new_major}.{new_minor}"
+    }
 
 
 @router.put("/{report_id}/versions/{version_id}/approve", response_model=ReportVersionResponse)
