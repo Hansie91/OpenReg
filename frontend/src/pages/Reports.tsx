@@ -633,15 +633,6 @@ export default function Reports() {
                                                     ))}
                                                 </select>
                                             </div>
-
-                                            <div>
-                                                <label className="input-label">Output Format</label>
-                                                <select className="select" defaultValue="csv">
-                                                    <option value="csv">CSV</option>
-                                                    <option value="xml">XML</option>
-                                                    <option value="json">JSON</option>
-                                                </select>
-                                            </div>
                                         </div>
 
                                         <div className="mt-6 pt-6 border-t border-gray-200">
