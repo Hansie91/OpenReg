@@ -369,6 +369,7 @@ def execute_report_task(job_run_id: str):
                             checksum_sha256=metadata['sha256_checksum']
                         )
                         db.add(artifact)
+                        db.flush()  # Ensure artifact is written immediately
                         
                         logger.info(f"Artifact generated and stored: {filename} ({metadata['size_bytes']} bytes)")
                         
@@ -376,7 +377,9 @@ def execute_report_task(job_run_id: str):
                         logger.error(f"Failed to generate {output_format} artifact: {e}")
                         # Continue with other formats
             
+            # Commit all artifacts
             db.commit()
+            logger.info(f"Committed {len(output_formats)} artifact(s) to database")
         
         # Mark job as successful
         job_run.status = models.JobRunStatus.SUCCESS
