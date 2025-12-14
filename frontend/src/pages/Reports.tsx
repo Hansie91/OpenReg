@@ -133,9 +133,25 @@ export default function Reports() {
     // Output format config
     const [outputFormat, setOutputFormat] = useState('xml');
     const [maxRecords, setMaxRecords] = useState<number | null>(null);
+    const [maxFileSizeMB, setMaxFileSizeMB] = useState<number | null>(null);
+    const [splitLimitType, setSplitLimitType] = useState<'none' | 'records' | 'size'>('none');
     const [csvDelimiter, setCsvDelimiter] = useState(',');
     const [csvQuote, setCsvQuote] = useState('"');
     const [csvHeader, setCsvHeader] = useState(true);
+
+    // Filename configuration
+    const [filenameTemplate, setFilenameTemplate] = useState('{report_name}_{business_date}_{version}');
+    const [filenameTokens, setFilenameTokens] = useState({
+        includeReportName: true,
+        includeBusinessDate: true,
+        dateFormat: 'YYYYMMDD',
+        includeVersion: true,
+        includeSequence: false,
+        sequenceFormat: '3',
+        includeTimestamp: false,
+        customPrefix: '',
+        customSuffix: '',
+    });
 
     const { data: reports, isLoading } = useQuery('reports', () =>
         reportsAPI.list().then((res) => res.data)
@@ -641,6 +657,393 @@ export default function Reports() {
                                         </div>
                                     </div>
                                 </>
+                            )}
+
+                            {/* Output Config Tab */}
+                            {editorTab === 'config' && (
+                                <div className="flex-1 p-6 overflow-y-auto">
+                                    <div className="max-w-2xl">
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-6">Output Configuration</h3>
+
+                                        {/* Output Format Selection */}
+                                        <div className="mb-6">
+                                            <label className="input-label">Output Format</label>
+                                            <div className="grid grid-cols-4 gap-3 mt-2">
+                                                {['xml', 'json', 'csv', 'txt'].map((fmt) => (
+                                                    <button
+                                                        key={fmt}
+                                                        onClick={() => setOutputFormat(fmt)}
+                                                        className={`p-3 rounded-lg border-2 text-center transition-all ${outputFormat === fmt
+                                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                                                            : 'border-gray-200 hover:border-gray-300'
+                                                            }`}
+                                                    >
+                                                        <span className="font-medium uppercase">{fmt}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* File Splitting Options */}
+                                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                            <h4 className="font-medium text-gray-900 mb-4">File Splitting (Optional)</h4>
+                                            <p className="text-sm text-gray-500 mb-4">
+                                                Split large outputs into multiple files. Choose one limit type or leave disabled.
+                                            </p>
+
+                                            <div className="space-y-3">
+                                                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-white cursor-pointer hover:border-gray-300">
+                                                    <input
+                                                        type="radio"
+                                                        name="splitLimit"
+                                                        checked={splitLimitType === 'none'}
+                                                        onChange={() => setSplitLimitType('none')}
+                                                        className="mt-0.5"
+                                                    />
+                                                    <div>
+                                                        <span className="font-medium text-gray-900">No splitting</span>
+                                                        <p className="text-sm text-gray-500">Output all records to a single file</p>
+                                                    </div>
+                                                </label>
+
+                                                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-white cursor-pointer hover:border-gray-300">
+                                                    <input
+                                                        type="radio"
+                                                        name="splitLimit"
+                                                        checked={splitLimitType === 'records'}
+                                                        onChange={() => setSplitLimitType('records')}
+                                                        className="mt-0.5"
+                                                    />
+                                                    <div className="flex-1">
+                                                        <span className="font-medium text-gray-900">Split by record count</span>
+                                                        <p className="text-sm text-gray-500 mb-2">Create new file after N records</p>
+                                                        {splitLimitType === 'records' && (
+                                                            <input
+                                                                type="number"
+                                                                className="input w-40"
+                                                                placeholder="e.g., 10000"
+                                                                value={maxRecords || ''}
+                                                                onChange={(e) => setMaxRecords(e.target.value ? parseInt(e.target.value) : null)}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                </label>
+
+                                                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-white cursor-pointer hover:border-gray-300">
+                                                    <input
+                                                        type="radio"
+                                                        name="splitLimit"
+                                                        checked={splitLimitType === 'size'}
+                                                        onChange={() => setSplitLimitType('size')}
+                                                        className="mt-0.5"
+                                                    />
+                                                    <div className="flex-1">
+                                                        <span className="font-medium text-gray-900">Split by file size</span>
+                                                        <p className="text-sm text-gray-500 mb-2">Create new file when size exceeds limit</p>
+                                                        {splitLimitType === 'size' && (
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="number"
+                                                                    className="input w-32"
+                                                                    placeholder="e.g., 100"
+                                                                    value={maxFileSizeMB || ''}
+                                                                    onChange={(e) => setMaxFileSizeMB(e.target.value ? parseInt(e.target.value) : null)}
+                                                                />
+                                                                <span className="text-gray-600 text-sm">MB</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {/* Filename Generator */}
+                                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                            <h4 className="font-medium text-gray-900 mb-4">Filename Template</h4>
+                                            <p className="text-sm text-gray-500 mb-4">
+                                                Configure how output files are named using tokens and custom text.
+                                            </p>
+
+                                            {/* Template Preview */}
+                                            <div className="bg-gray-900 rounded-lg p-3 mb-4">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-gray-400 text-xs uppercase">Preview</span>
+                                                </div>
+                                                <code className="text-green-400 text-sm">
+                                                    {filenameTokens.customPrefix}
+                                                    {filenameTokens.includeReportName ? 'MiFIR_Report' : ''}
+                                                    {filenameTokens.includeReportName && (filenameTokens.includeBusinessDate || filenameTokens.includeVersion || filenameTokens.includeSequence || filenameTokens.includeTimestamp) ? '_' : ''}
+                                                    {filenameTokens.includeBusinessDate ? (filenameTokens.dateFormat === 'YYYYMMDD' ? '20241214' : filenameTokens.dateFormat === 'YYYY-MM-DD' ? '2024-12-14' : '14-12-2024') : ''}
+                                                    {filenameTokens.includeBusinessDate && (filenameTokens.includeVersion || filenameTokens.includeSequence || filenameTokens.includeTimestamp) ? '_' : ''}
+                                                    {filenameTokens.includeVersion ? 'v1.2' : ''}
+                                                    {filenameTokens.includeVersion && (filenameTokens.includeSequence || filenameTokens.includeTimestamp) ? '_' : ''}
+                                                    {filenameTokens.includeSequence ? (filenameTokens.sequenceFormat === '2' ? '01' : filenameTokens.sequenceFormat === '3' ? '001' : '0001') : ''}
+                                                    {filenameTokens.includeSequence && filenameTokens.includeTimestamp ? '_' : ''}
+                                                    {filenameTokens.includeTimestamp ? '143052' : ''}
+                                                    {filenameTokens.customSuffix}
+                                                    .{outputFormat}
+                                                </code>
+                                            </div>
+
+                                            {/* Token Configuration */}
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="input-label">Custom Prefix</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input mt-1"
+                                                            placeholder="e.g., FIRM_"
+                                                            value={filenameTokens.customPrefix}
+                                                            onChange={(e) => setFilenameTokens({ ...filenameTokens, customPrefix: e.target.value })}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="input-label">Custom Suffix</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input mt-1"
+                                                            placeholder="e.g., _FINAL"
+                                                            value={filenameTokens.customSuffix}
+                                                            onChange={(e) => setFilenameTokens({ ...filenameTokens, customSuffix: e.target.value })}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="border-t border-gray-200 pt-4">
+                                                    <p className="text-sm font-medium text-gray-700 mb-3">Include in filename:</p>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={filenameTokens.includeReportName}
+                                                                onChange={(e) => setFilenameTokens({ ...filenameTokens, includeReportName: e.target.checked })}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Report Name</span>
+                                                        </label>
+
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={filenameTokens.includeVersion}
+                                                                onChange={(e) => setFilenameTokens({ ...filenameTokens, includeVersion: e.target.checked })}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Version (v1.2)</span>
+                                                        </label>
+
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={filenameTokens.includeBusinessDate}
+                                                                onChange={(e) => setFilenameTokens({ ...filenameTokens, includeBusinessDate: e.target.checked })}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Business Date</span>
+                                                        </label>
+
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={filenameTokens.includeTimestamp}
+                                                                onChange={(e) => setFilenameTokens({ ...filenameTokens, includeTimestamp: e.target.checked })}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Timestamp (HHMMSS)</span>
+                                                        </label>
+
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={filenameTokens.includeSequence}
+                                                                onChange={(e) => setFilenameTokens({ ...filenameTokens, includeSequence: e.target.checked })}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Sequence Number</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                {/* Date Format Options */}
+                                                {filenameTokens.includeBusinessDate && (
+                                                    <div className="border-t border-gray-200 pt-4">
+                                                        <label className="input-label">Date Format</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={filenameTokens.dateFormat}
+                                                            onChange={(e) => setFilenameTokens({ ...filenameTokens, dateFormat: e.target.value })}
+                                                        >
+                                                            <option value="YYYYMMDD">YYYYMMDD (20241214)</option>
+                                                            <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-14)</option>
+                                                            <option value="DD-MM-YYYY">DD-MM-YYYY (14-12-2024)</option>
+                                                            <option value="MMDDYYYY">MMDDYYYY (12142024)</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {/* Sequence Format Options */}
+                                                {filenameTokens.includeSequence && (
+                                                    <div className="border-t border-gray-200 pt-4">
+                                                        <label className="input-label">Sequence Padding</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={filenameTokens.sequenceFormat}
+                                                            onChange={(e) => setFilenameTokens({ ...filenameTokens, sequenceFormat: e.target.value })}
+                                                        >
+                                                            <option value="2">2 digits (01, 02, ...)</option>
+                                                            <option value="3">3 digits (001, 002, ...)</option>
+                                                            <option value="4">4 digits (0001, 0002, ...)</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* CSV Options */}
+                                        {outputFormat === 'csv' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">CSV Options</h4>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="input-label">Delimiter</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={csvDelimiter}
+                                                            onChange={(e) => setCsvDelimiter(e.target.value)}
+                                                        >
+                                                            <option value=",">Comma (,)</option>
+                                                            <option value=";">Semicolon (;)</option>
+                                                            <option value="\t">Tab</option>
+                                                            <option value="|">Pipe (|)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="input-label">Quote Character</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={csvQuote}
+                                                            onChange={(e) => setCsvQuote(e.target.value)}
+                                                        >
+                                                            <option value='"'>Double Quote (")</option>
+                                                            <option value="'">Single Quote (')</option>
+                                                            <option value="">None</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={csvHeader}
+                                                                onChange={(e) => setCsvHeader(e.target.checked)}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Include header row</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TXT (Fixed-Width) Options */}
+                                        {outputFormat === 'txt' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">Fixed-Width Text Options</h4>
+                                                <div className="space-y-4">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="input-label">Total Record Length</label>
+                                                            <input
+                                                                type="number"
+                                                                className="input mt-1"
+                                                                placeholder="e.g., 500"
+                                                                defaultValue={500}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="input-label">Padding Character</label>
+                                                            <select className="select mt-1" defaultValue=" ">
+                                                                <option value=" ">Space</option>
+                                                                <option value="0">Zero (0)</option>
+                                                                <option value="_">Underscore (_)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="input-label">Line Ending</label>
+                                                        <select className="select mt-1" defaultValue="CRLF">
+                                                            <option value="CRLF">Windows (CRLF)</option>
+                                                            <option value="LF">Unix (LF)</option>
+                                                            <option value="CR">Classic Mac (CR)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="bg-white p-3 rounded border border-gray-200">
+                                                        <p className="text-sm text-gray-500">
+                                                            <strong>Note:</strong> Column positions are defined in your Python code using the <code className="text-indigo-600">format_fixed_width()</code> helper function.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* XML Options */}
+                                        {outputFormat === 'xml' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">XML Options</h4>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="input-label">Root Element Name</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input mt-1"
+                                                            placeholder="e.g., Report"
+                                                            defaultValue="Report"
+                                                        />
+                                                    </div>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input type="checkbox" defaultChecked className="rounded" />
+                                                        <span className="text-sm text-gray-700">Include XML declaration</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input type="checkbox" defaultChecked className="rounded" />
+                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* JSON Options */}
+                                        {outputFormat === 'json' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">JSON Options</h4>
+                                                <div className="space-y-4">
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input type="checkbox" defaultChecked className="rounded" />
+                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input type="checkbox" className="rounded" />
+                                                        <span className="text-sm text-gray-700">Wrap in array</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Preview */}
+                                        <div className="bg-gray-900 rounded-lg p-4 text-sm">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-gray-400 text-xs uppercase">Output Preview</span>
+                                                <span className="text-gray-500 text-xs">{outputFormat.toUpperCase()}</span>
+                                            </div>
+                                            <pre className="text-green-400 font-mono overflow-x-auto">
+                                                {outputFormat === 'csv' && `${csvHeader ? 'field1,field2,field3\n' : ''}value1${csvDelimiter}value2${csvDelimiter}value3\nvalue4${csvDelimiter}value5${csvDelimiter}value6`}
+                                                {outputFormat === 'xml' && `<?xml version="1.0"?>\n<Report>\n  <Record>\n    <Field1>value1</Field1>\n  </Record>\n</Report>`}
+                                                {outputFormat === 'json' && `[\n  {\n    "field1": "value1",\n    "field2": "value2"\n  }\n]`}
+                                                {outputFormat === 'txt' && `FIELD1    FIELD2    FIELD3    \nVALUE1    VALUE2    VALUE3    `}
+                                            </pre>
+                                        </div>
+                                    </div>
+                                </div>
                             )}
 
                             {/* History Tab */}
