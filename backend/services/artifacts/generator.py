@@ -166,7 +166,14 @@ class ArtifactGenerator:
                 row_elem.set('index', str(idx))
                 
                 for col_name, value in row.items():
-                    col_elem = ET.SubElement(row_elem, str(col_name).replace(' ', '_'))
+                    # Sanitize column name for XML tag
+                    safe_col_name = str(col_name).replace(' ', '_').replace('-', '_')
+                    # Remove any characters not valid in XML tags
+                    safe_col_name = ''.join(c for c in safe_col_name if c.isalnum() or c == '_')
+                    if not safe_col_name or not safe_col_name[0].isalpha():
+                        safe_col_name = 'field_' + safe_col_name
+                    
+                    col_elem = ET.SubElement(row_elem, safe_col_name)
                     
                     # Handle different data types
                     if pd.isna(value):
@@ -177,14 +184,10 @@ class ArtifactGenerator:
                     else:
                         col_elem.text = str(value)
             
-            # Pretty print XML
-            xml_str = minidom.parseString(
-                ET.tostring(root, encoding='utf-8')
-            ).toprettyxml(indent='  ', encoding='utf-8')
-            
-            # Write XML
+            # Write XML directly without minidom (simpler, more reliable)
+            tree = ET.ElementTree(root)
             with open(filepath, 'wb') as f:
-                f.write(xml_str)
+                tree.write(f, encoding='utf-8', xml_declaration=True)
             
             # Optionally compress
             if compress:
