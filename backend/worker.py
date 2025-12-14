@@ -297,8 +297,8 @@ def execute_report_task(job_run_id: str):
         if final_output is not None and isinstance(final_output, pd.DataFrame):
             storage = StorageService()
             
-            # Get output formats from config (can be multiple)
-            output_formats_config = report_version.config.get('output_formats', ['csv'])
+            # Get output formats from config (support both singular and plural keys)
+            output_formats_config = report_version.config.get('output_format') or report_version.config.get('output_formats', 'csv')
             if isinstance(output_formats_config, str):
                 output_formats = [output_formats_config]
             else:
