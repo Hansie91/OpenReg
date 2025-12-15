@@ -30,6 +30,7 @@ class ReportUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    streaming_config: Optional[dict] = None
 
 
 class ReportResponse(BaseModel):

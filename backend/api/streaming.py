@@ -13,7 +13,7 @@ from uuid import UUID
 from datetime import datetime
 
 from database import get_db
-from auth import get_current_user
+from services.auth import get_current_user
 import models
 from services.encryption import encrypt_value, decrypt_value
 

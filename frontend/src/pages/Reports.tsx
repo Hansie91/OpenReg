@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { reportsAPI, connectorsAPI, destinationsAPI, reportDestinationsAPI } from '../services/api';
+import { reportsAPI, connectorsAPI, destinationsAPI, reportDestinationsAPI, streamingAPI } from '../services/api';
 import Editor from '@monaco-editor/react';
 import ReportWizard from '../components/ReportWizard';
 
@@ -113,7 +113,7 @@ export default function Reports() {
     const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
-    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config' | 'delivery'>('code');
+    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config' | 'delivery' | 'streaming'>('code');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [bumpMajor, setBumpMajor] = useState(false);
@@ -192,6 +192,26 @@ export default function Reports() {
         () => selectedReport ? reportDestinationsAPI.list(selectedReport.id).then((res) => res.data) : [],
         { enabled: !!selectedReport }
     );
+
+    // Fetch streaming topics for linking
+    const { data: streamingTopics } = useQuery('streaming-topics', () =>
+        streamingAPI.listTopics().then((res) => res.data)
+    );
+
+    // Streaming config state for selected report
+    const [streamingConfig, setStreamingConfig] = useState<{
+        enabled: boolean;
+        topic_id: string;
+        trigger_mode: string;
+        window_minutes: number;
+        threshold_count: number;
+    }>({
+        enabled: false,
+        topic_id: '',
+        trigger_mode: 'combined',
+        window_minutes: 15,
+        threshold_count: 10000
+    });
 
     const createMutation = useMutation(
         (data: any) => reportsAPI.create(data),
@@ -599,6 +619,15 @@ export default function Reports() {
                                     }`}
                             >
                                 Delivery
+                            </button>
+                            <button
+                                onClick={() => setEditorTab('streaming')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'streaming'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Streaming
                             </button>
                             {hasUnsavedChanges && (
                                 <span className="ml-auto text-sm text-amber-600 flex items-center">
@@ -1307,6 +1336,137 @@ export default function Reports() {
                                                 using the configured retry policy and credentials.
                                             </p>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Streaming Tab Content */}
+                            {editorTab === 'streaming' && (
+                                <div className="p-6 overflow-y-auto h-[500px]">
+                                    <div className="space-y-6">
+                                        {/* Enable/Disable Streaming */}
+                                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                            <div>
+                                                <h4 className="font-medium text-gray-900">Real-Time Streaming</h4>
+                                                <p className="text-sm text-gray-500">Process transactions from Kafka/AMQ Streams</p>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={streamingConfig.enabled}
+                                                    onChange={(e) => setStreamingConfig({ ...streamingConfig, enabled: e.target.checked })}
+                                                    className="sr-only peer"
+                                                />
+                                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                            </label>
+                                        </div>
+
+                                        {streamingConfig.enabled && (
+                                            <>
+                                                {/* Topic Selection */}
+                                                <div>
+                                                    <label className="input-label">Streaming Topic</label>
+                                                    <select
+                                                        className="select w-full"
+                                                        value={streamingConfig.topic_id}
+                                                        onChange={(e) => setStreamingConfig({ ...streamingConfig, topic_id: e.target.value })}
+                                                    >
+                                                        <option value="">Select a topic...</option>
+                                                        {streamingTopics?.map((topic: any) => (
+                                                            <option key={topic.id} value={topic.id}>
+                                                                {topic.name} ({topic.topic_name})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    {(!streamingTopics || streamingTopics.length === 0) && (
+                                                        <p className="text-sm text-amber-600 mt-1">
+                                                            No topics configured. <a href="/streaming" className="underline">Add one first</a>
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                {/* Trigger Mode */}
+                                                <div>
+                                                    <label className="input-label">Trigger Mode</label>
+                                                    <select
+                                                        className="select w-full"
+                                                        value={streamingConfig.trigger_mode}
+                                                        onChange={(e) => setStreamingConfig({ ...streamingConfig, trigger_mode: e.target.value })}
+                                                    >
+                                                        <option value="time_window">Time Window Only</option>
+                                                        <option value="threshold">Threshold Only</option>
+                                                        <option value="combined">Combined (whichever first)</option>
+                                                        <option value="manual">Manual Only</option>
+                                                    </select>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        {streamingConfig.trigger_mode === 'time_window' && 'Trigger batch after specified time window'}
+                                                        {streamingConfig.trigger_mode === 'threshold' && 'Trigger batch when message count reached'}
+                                                        {streamingConfig.trigger_mode === 'combined' && 'Trigger on time window OR threshold, whichever comes first'}
+                                                        {streamingConfig.trigger_mode === 'manual' && 'Only trigger manually via API or UI'}
+                                                    </p>
+                                                </div>
+
+                                                {/* Time Window Setting */}
+                                                {(streamingConfig.trigger_mode === 'time_window' || streamingConfig.trigger_mode === 'combined') && (
+                                                    <div>
+                                                        <label className="input-label">Time Window (minutes)</label>
+                                                        <input
+                                                            type="number"
+                                                            className="input w-full"
+                                                            value={streamingConfig.window_minutes}
+                                                            onChange={(e) => setStreamingConfig({ ...streamingConfig, window_minutes: parseInt(e.target.value) || 15 })}
+                                                            min={1}
+                                                            max={1440}
+                                                        />
+                                                        <p className="text-xs text-gray-500 mt-1">Process buffered messages every {streamingConfig.window_minutes} minutes</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Threshold Setting */}
+                                                {(streamingConfig.trigger_mode === 'threshold' || streamingConfig.trigger_mode === 'combined') && (
+                                                    <div>
+                                                        <label className="input-label">Message Threshold</label>
+                                                        <input
+                                                            type="number"
+                                                            className="input w-full"
+                                                            value={streamingConfig.threshold_count}
+                                                            onChange={(e) => setStreamingConfig({ ...streamingConfig, threshold_count: parseInt(e.target.value) || 10000 })}
+                                                            min={100}
+                                                            step={1000}
+                                                        />
+                                                        <p className="text-xs text-gray-500 mt-1">Trigger when {streamingConfig.threshold_count.toLocaleString()} messages are buffered</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Save Button */}
+                                                <div className="pt-4 border-t border-gray-200">
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!selectedReport) return;
+                                                            try {
+                                                                await reportsAPI.update(selectedReport.id, {
+                                                                    streaming_config: streamingConfig
+                                                                });
+                                                                alert('Streaming configuration saved!');
+                                                            } catch (err: any) {
+                                                                alert(err.response?.data?.detail || 'Failed to save');
+                                                            }
+                                                        }}
+                                                        className="btn btn-primary"
+                                                    >
+                                                        Save Streaming Config
+                                                    </button>
+                                                </div>
+
+                                                {/* Info Note */}
+                                                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                                    <p className="text-sm text-blue-800">
+                                                        <strong>⚡ How it works:</strong> Messages from the selected topic are buffered.
+                                                        When trigger conditions are met, this report runs with the buffered data as input.
+                                                    </p>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             )}

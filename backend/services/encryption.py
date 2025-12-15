@@ -69,3 +69,33 @@ def encrypt_credentials(credentials: dict) -> bytes:
     json_bytes = json.dumps(credentials).encode()
     return cipher.encrypt(json_bytes)
 
+
+def encrypt_value(value: str) -> bytes:
+    """
+    Encrypt a single string value.
+    
+    Args:
+        value: Plaintext string to encrypt
+        
+    Returns:
+        Encrypted bytes for storage in LargeBinary column
+    """
+    cipher = get_cipher()
+    return cipher.encrypt(value.encode())
+
+
+def decrypt_value(encrypted_value: bytes) -> str:
+    """
+    Decrypt a single encrypted value.
+    
+    Args:
+        encrypted_value: Encrypted bytes from LargeBinary column
+        
+    Returns:
+        Decrypted plaintext string
+    """
+    if encrypted_value is None:
+        return ""
+    cipher = get_cipher()
+    return cipher.decrypt(encrypted_value).decode()
+
