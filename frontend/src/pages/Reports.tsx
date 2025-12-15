@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { reportsAPI, connectorsAPI } from '../services/api';
+import { reportsAPI, connectorsAPI, destinationsAPI, reportDestinationsAPI } from '../services/api';
 import Editor from '@monaco-editor/react';
 import ReportWizard from '../components/ReportWizard';
 
@@ -113,7 +113,7 @@ export default function Reports() {
     const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
-    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config'>('code');
+    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config' | 'delivery'>('code');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [bumpMajor, setBumpMajor] = useState(false);
@@ -178,6 +178,18 @@ export default function Reports() {
     const { data: reportVersions } = useQuery(
         ['report-versions', selectedReport?.id],
         () => selectedReport ? reportsAPI.getVersions(selectedReport.id).then((res) => res.data) : null,
+        { enabled: !!selectedReport }
+    );
+
+    // Fetch all destinations for linking dropdown
+    const { data: allDestinations } = useQuery('destinations', () =>
+        destinationsAPI.list().then((res) => res.data)
+    );
+
+    // Fetch linked destinations for selected report
+    const { data: linkedDestinations, refetch: refetchLinkedDestinations } = useQuery(
+        ['report-destinations', selectedReport?.id],
+        () => selectedReport ? reportDestinationsAPI.list(selectedReport.id).then((res) => res.data) : [],
         { enabled: !!selectedReport }
     );
 
@@ -578,6 +590,15 @@ export default function Reports() {
                                     }`}
                             >
                                 Version History
+                            </button>
+                            <button
+                                onClick={() => setEditorTab('delivery')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'delivery'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Delivery
                             </button>
                             {hasUnsavedChanges && (
                                 <span className="ml-auto text-sm text-amber-600 flex items-center">
@@ -1166,6 +1187,127 @@ export default function Reports() {
                                             <p className="text-sm mt-1">Execute this report to see history</p>
                                         </div>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Delivery Tab */}
+                            {editorTab === 'delivery' && (
+                                <div className="flex-1 p-6 overflow-y-auto">
+                                    <div className="max-w-2xl">
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Auto-Delivery Settings</h3>
+                                        <p className="text-sm text-gray-500 mb-6">
+                                            Configure destinations where report artifacts are automatically delivered after successful execution.
+                                        </p>
+
+                                        {/* Add Destination */}
+                                        <div className="mb-6">
+                                            <label className="input-label">Add Destination</label>
+                                            <div className="flex gap-2 mt-2">
+                                                <select
+                                                    className="select flex-1"
+                                                    id="addDestinationSelect"
+                                                    defaultValue=""
+                                                >
+                                                    <option value="" disabled>Select a destination...</option>
+                                                    {allDestinations?.filter((d: any) =>
+                                                        !linkedDestinations?.some((ld: any) => ld.destination_id === d.id)
+                                                    ).map((dest: any) => (
+                                                        <option key={dest.id} value={dest.id}>
+                                                            {dest.name} ({dest.protocol}) - {dest.host}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    onClick={async () => {
+                                                        const select = document.getElementById('addDestinationSelect') as HTMLSelectElement;
+                                                        const destId = select?.value;
+                                                        if (!destId || !selectedReport) return;
+                                                        try {
+                                                            await reportDestinationsAPI.link(selectedReport.id, destId);
+                                                            refetchLinkedDestinations();
+                                                            select.value = '';
+                                                        } catch (err: any) {
+                                                            alert(err.response?.data?.detail || 'Failed to link destination');
+                                                        }
+                                                    }}
+                                                    className="btn btn-primary"
+                                                >
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Linked Destinations List */}
+                                        <div className="space-y-3">
+                                            <h4 className="font-medium text-gray-900">Linked Destinations</h4>
+                                            {linkedDestinations && linkedDestinations.length > 0 ? (
+                                                linkedDestinations.map((dest: any) => (
+                                                    <div key={dest.destination_id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-2xl">{dest.protocol === 'sftp' ? '🔒' : '📁'}</span>
+                                                                <div>
+                                                                    <p className="font-medium text-gray-900">{dest.destination_name}</p>
+                                                                    <p className="text-xs text-gray-500">{dest.protocol.toUpperCase()} • {dest.host}</p>
+                                                                </div>
+                                                                {!dest.is_active && (
+                                                                    <span className="badge badge-warning">Inactive</span>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    if (!selectedReport) return;
+                                                                    if (!confirm(`Remove ${dest.destination_name} from auto-delivery?`)) return;
+                                                                    try {
+                                                                        await reportDestinationsAPI.unlink(selectedReport.id, dest.destination_id);
+                                                                        refetchLinkedDestinations();
+                                                                    } catch (err: any) {
+                                                                        alert(err.response?.data?.detail || 'Failed to unlink destination');
+                                                                    }
+                                                                }}
+                                                                className="btn btn-ghost text-red-600 hover:bg-red-50"
+                                                            >
+                                                                <Icons.Trash />
+                                                            </button>
+                                                        </div>
+                                                        {/* Retry Settings Display */}
+                                                        <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-4 gap-3 text-xs">
+                                                            <div className="bg-white p-2 rounded border border-gray-100">
+                                                                <span className="text-gray-500 block">Retries</span>
+                                                                <span className="font-medium text-gray-900">{dest.max_retries}</span>
+                                                            </div>
+                                                            <div className="bg-white p-2 rounded border border-gray-100">
+                                                                <span className="text-gray-500 block">Backoff</span>
+                                                                <span className="font-medium text-gray-900 capitalize">{dest.retry_backoff}</span>
+                                                            </div>
+                                                            <div className="bg-white p-2 rounded border border-gray-100">
+                                                                <span className="text-gray-500 block">Base Delay</span>
+                                                                <span className="font-medium text-gray-900">{dest.retry_base_delay}s</span>
+                                                            </div>
+                                                            <div className="bg-white p-2 rounded border border-gray-100">
+                                                                <span className="text-gray-500 block">Max Delay</span>
+                                                                <span className="font-medium text-gray-900">{dest.retry_max_delay}s</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200 text-gray-500">
+                                                    <p>No delivery destinations configured.</p>
+                                                    <p className="text-sm mt-1">Add a destination above to enable auto-delivery.</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Info Note */}
+                                        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                            <p className="text-sm text-blue-800">
+                                                <strong>💡 How it works:</strong> When this report runs successfully,
+                                                artifacts will be automatically uploaded to all linked destinations
+                                                using the configured retry policy and credentials.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

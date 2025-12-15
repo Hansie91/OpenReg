@@ -255,6 +255,16 @@ class Report(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     
+    # Streaming configuration for real-time transactions
+    # Schema: {
+    #   "enabled": bool,
+    #   "topic_id": UUID,
+    #   "trigger_mode": "time_window" | "threshold" | "combined" | "manual",
+    #   "window_minutes": int (default 15),
+    #   "threshold_count": int (default 10000)
+    # }
+    streaming_config = Column(JSONB, nullable=True)
+    
     # Relationships
     tenant = relationship("Tenant", back_populates="reports")
     versions = relationship("ReportVersion", back_populates="report", foreign_keys="ReportVersion.report_id", cascade="all, delete-orphan")
@@ -834,3 +844,152 @@ class RegulatorResponse(Base, TimestampMixin):
     ingestion_method = Column(String(50), nullable=False)  # 'file_upload', 'webhook', 'api_poll'
     ingested_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     ingested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# === Streaming Enums ===
+
+class StreamingAuthType(str, enum.Enum):
+    """Authentication type for Kafka/AMQ Streams"""
+    SASL_SCRAM = "sasl_scram"
+    SASL_PLAIN = "sasl_plain"
+    MTLS = "mtls"
+    NONE = "none"
+
+
+class StreamingSchemaFormat(str, enum.Enum):
+    """Schema format for message serialization"""
+    JSON = "json"
+    PROTOBUF = "protobuf"
+    AVRO = "avro"
+    RAW = "raw"
+
+
+class StreamingTriggerMode(str, enum.Enum):
+    """Trigger mode for micro-batch processing"""
+    TIME_WINDOW = "time_window"
+    THRESHOLD = "threshold"
+    COMBINED = "combined"
+    MANUAL = "manual"
+
+
+# === Streaming Models ===
+
+class StreamingTopic(Base, TimestampMixin):
+    """
+    Kafka/AMQ Streams topic configuration.
+    
+    Stores connection settings, authentication credentials,
+    and schema configuration for consuming streaming transactions.
+    """
+    __tablename__ = "streaming_topics"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    
+    # Basic info
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Broker configuration
+    bootstrap_servers = Column(String(1000), nullable=False)  # comma-separated
+    topic_name = Column(String(255), nullable=False)
+    consumer_group = Column(String(255), nullable=False)
+    
+    # Authentication
+    auth_type = Column(Enum(StreamingAuthType), default=StreamingAuthType.SASL_SCRAM, nullable=False)
+    
+    # SASL credentials (encrypted)
+    sasl_username = Column(LargeBinary, nullable=True)
+    sasl_password = Column(LargeBinary, nullable=True)
+    sasl_mechanism = Column(String(50), default="SCRAM-SHA-512", nullable=True)
+    
+    # mTLS certificates (encrypted, stored as PEM)
+    ssl_ca_cert = Column(LargeBinary, nullable=True)
+    ssl_client_cert = Column(LargeBinary, nullable=True)
+    ssl_client_key = Column(LargeBinary, nullable=True)
+    ssl_key_password = Column(LargeBinary, nullable=True)
+    
+    # Schema configuration
+    schema_format = Column(Enum(StreamingSchemaFormat), default=StreamingSchemaFormat.JSON, nullable=False)
+    schema_registry_url = Column(String(1000), nullable=True)
+    schema_definition = Column(JSONB, nullable=True)  # For JSON Schema or Protobuf descriptor
+    
+    # Consumer settings
+    auto_offset_reset = Column(String(20), default="earliest", nullable=False)
+    max_poll_records = Column(Integer, default=500, nullable=False)
+    session_timeout_ms = Column(Integer, default=30000, nullable=False)
+    
+    # Relationships
+    tenant = relationship("Tenant")
+    buffers = relationship("StreamingBuffer", back_populates="topic", cascade="all, delete-orphan")
+    consumer_states = relationship("StreamingConsumerState", back_populates="topic", cascade="all, delete-orphan")
+
+
+class StreamingBuffer(Base, TimestampMixin):
+    """
+    Buffered transactions from streaming topics awaiting batch processing.
+    
+    Transactions are held here until a trigger condition is met
+    (time window or threshold), then processed as a micro-batch.
+    """
+    __tablename__ = "streaming_buffer"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    topic_id = Column(UUID(as_uuid=True), ForeignKey("streaming_topics.id"), nullable=False, index=True)
+    
+    # Kafka offset tracking
+    partition = Column(Integer, nullable=False)
+    offset = Column(BigInteger, nullable=False)
+    message_key = Column(String(500), nullable=True)
+    
+    # Message content
+    payload = Column(JSONB, nullable=False)
+    headers = Column(JSONB, nullable=True)
+    
+    # Processing state
+    received_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed = Column(Boolean, default=False, nullable=False, index=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    batch_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # Links to job run
+    
+    # Validation
+    is_valid = Column(Boolean, nullable=True)  # None = not validated yet
+    validation_errors = Column(JSONB, nullable=True)
+    
+    # Relationships
+    topic = relationship("StreamingTopic", back_populates="buffers")
+    
+    # Unique constraint on topic + partition + offset
+    __table_args__ = (
+        # Prevent duplicate consumption
+        # (handled at application level with upsert)
+    )
+
+
+class StreamingConsumerState(Base, TimestampMixin):
+    """
+    Tracks consumer group state per partition.
+    
+    Used for monitoring consumer lag and enabling
+    manual offset management for replay scenarios.
+    """
+    __tablename__ = "streaming_consumer_states"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    topic_id = Column(UUID(as_uuid=True), ForeignKey("streaming_topics.id"), nullable=False, index=True)
+    
+    # Partition tracking
+    partition = Column(Integer, nullable=False)
+    current_offset = Column(BigInteger, nullable=False)
+    lag = Column(BigInteger, nullable=True)  # high_watermark - current_offset
+    
+    # Consumer status
+    last_poll_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    error_message = Column(Text, nullable=True)
+    
+    # Relationships
+    topic = relationship("StreamingTopic", back_populates="consumer_states")
+

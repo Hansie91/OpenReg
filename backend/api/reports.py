@@ -653,7 +653,144 @@ async def get_report_stats(
     }
 
 
-# TODO: Additional endpoints for v1
-# - GET /{report_id}/versions/{version_id} - Get specific version details
-# - POST /{report_id}/clone - Clone a report
-# - GET /{report_id}/schedule - Get report schedule
+# === Report-Destination Linking (Auto-Delivery) ===
+
+class ReportDestinationResponse(BaseModel):
+    destination_id: UUID
+    destination_name: str
+    protocol: str
+    host: str
+    is_active: bool
+    max_retries: int = 3
+    retry_backoff: str = "exponential"
+    retry_base_delay: int = 60
+    retry_max_delay: int = 3600
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{report_id}/destinations", response_model=List[ReportDestinationResponse])
+async def list_report_destinations(
+    report_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all destinations linked to this report for auto-delivery."""
+    # Verify report belongs to tenant
+    report = db.query(models.Report).filter(
+        models.Report.id == report_id,
+        models.Report.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Get linked destinations
+    links = db.query(models.ReportDestination).filter(
+        models.ReportDestination.report_id == report_id
+    ).all()
+    
+    results = []
+    for link in links:
+        dest = db.query(models.Destination).filter(
+            models.Destination.id == link.destination_id
+        ).first()
+        if dest:
+            config = dest.config or {}
+            retry_policy = dest.retry_policy or {}
+            results.append(ReportDestinationResponse(
+                destination_id=dest.id,
+                destination_name=dest.name,
+                protocol=dest.protocol.value if dest.protocol else "sftp",
+                host=config.get("host", ""),
+                is_active=dest.is_active,
+                max_retries=retry_policy.get("max_retries", 3),
+                retry_backoff=retry_policy.get("retry_backoff", "exponential"),
+                retry_base_delay=retry_policy.get("retry_base_delay", 60),
+                retry_max_delay=retry_policy.get("retry_max_delay", 3600)
+            ))
+    
+    return results
+
+
+class LinkDestinationRequest(BaseModel):
+    destination_id: UUID
+
+
+@router.post("/{report_id}/destinations")
+async def link_destination(
+    report_id: UUID,
+    request: LinkDestinationRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Link a destination to this report for auto-delivery on success."""
+    # Verify report belongs to tenant
+    report = db.query(models.Report).filter(
+        models.Report.id == report_id,
+        models.Report.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Verify destination belongs to tenant
+    destination = db.query(models.Destination).filter(
+        models.Destination.id == request.destination_id,
+        models.Destination.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not destination:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    
+    # Check if already linked
+    existing = db.query(models.ReportDestination).filter(
+        models.ReportDestination.report_id == report_id,
+        models.ReportDestination.destination_id == request.destination_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="Destination already linked to this report")
+    
+    # Create link
+    link = models.ReportDestination(
+        report_id=report_id,
+        destination_id=request.destination_id
+    )
+    db.add(link)
+    db.commit()
+    
+    return {"message": "Destination linked successfully", "destination_name": destination.name}
+
+
+@router.delete("/{report_id}/destinations/{destination_id}")
+async def unlink_destination(
+    report_id: UUID,
+    destination_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a destination from auto-delivery for this report."""
+    # Verify report belongs to tenant
+    report = db.query(models.Report).filter(
+        models.Report.id == report_id,
+        models.Report.tenant_id == current_user.tenant_id
+    ).first()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Find and delete link
+    link = db.query(models.ReportDestination).filter(
+        models.ReportDestination.report_id == report_id,
+        models.ReportDestination.destination_id == destination_id
+    ).first()
+    
+    if not link:
+        raise HTTPException(status_code=404, detail="Destination not linked to this report")
+    
+    db.delete(link)
+    db.commit()
+    
+    return {"message": "Destination unlinked successfully"}

@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 # Import all routers
-from . import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, exceptions, queries, logs, submissions, schemas, dashboard, xbrl
+from . import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, exceptions, queries, logs, submissions, schemas, dashboard, xbrl, delivery
 
 __all__ = [
     "auth",
@@ -21,5 +21,7 @@ __all__ = [
     "submissions",
     "schemas",
     "dashboard",
-    "xbrl"
+    "xbrl",
+    "delivery"
 ]
+

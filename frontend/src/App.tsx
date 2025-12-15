@@ -13,6 +13,7 @@ import Validations from './pages/Validations';
 import Exceptions from './pages/ExceptionsPage';
 import Schedules from './pages/Schedules';
 import Destinations from './pages/Destinations';
+import Streaming from './pages/Streaming';
 import Admin from './pages/Admin';
 import Schemas from './pages/Schemas';
 import Layout from './components/Layout';
@@ -44,6 +45,7 @@ function App() {
                         <Route path="exceptions" element={<Exceptions />} />
                         <Route path="schedules" element={<Schedules />} />
                         <Route path="destinations" element={<Destinations />} />
+                        <Route path="streaming" element={<Streaming />} />
                         <Route path="schemas" element={<Schemas />} />
                         <Route path="admin" element={<Admin />} />
                     </Route>

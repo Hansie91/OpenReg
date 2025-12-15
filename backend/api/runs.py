@@ -101,7 +101,8 @@ async def list_runs(
             "error_message": run.error_message,
             "created_at": run.created_at,
             "artifact_count": artifact_count,
-            "first_artifact_id": str(first_artifact.id) if first_artifact else None
+            "first_artifact_id": str(first_artifact.id) if first_artifact else None,
+            "first_artifact_filename": first_artifact.filename if first_artifact else None
         })
     
     return {

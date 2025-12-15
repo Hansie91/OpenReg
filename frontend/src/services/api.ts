@@ -112,6 +112,15 @@ export const runsAPI = {
     },
 };
 
+// Report Destinations API (for auto-delivery linking)
+export const reportDestinationsAPI = {
+    list: (reportId: string) => api.get(`/reports/${reportId}/destinations`),
+    link: (reportId: string, destinationId: string) =>
+        api.post(`/reports/${reportId}/destinations`, { destination_id: destinationId }),
+    unlink: (reportId: string, destinationId: string) =>
+        api.delete(`/reports/${reportId}/destinations/${destinationId}`),
+};
+
 // Mappings API
 export const mappingsAPI = {
     listSets: () => api.get('/mappings'),
@@ -164,6 +173,16 @@ export const destinationsAPI = {
     delete: (id: string) => api.delete(`/destinations/${id}`),
     test: (data: any) => api.post('/destinations/test', data),
     testExisting: (id: string) => api.post(`/destinations/${id}/test`),
+    getDeliveries: (id: string, skip?: number, limit?: number) =>
+        api.get(`/delivery/destinations/${id}/deliveries`, { params: { skip, limit } }),
+};
+
+// Delivery API
+export const deliveryAPI = {
+    trigger: (artifactId: string, destinationId: string) =>
+        api.post(`/delivery/artifacts/${artifactId}/deliver`, { destination_id: destinationId }),
+    getArtifactDeliveries: (artifactId: string) =>
+        api.get(`/delivery/artifacts/${artifactId}/deliveries`),
 };
 
 // Admin API
@@ -241,4 +260,20 @@ export const xbrlAPI = {
         api.get(`/xbrl/${id}/presentation`, { params: { role } }),
     getCalculation: (id: string) => api.get(`/xbrl/${id}/calculation`),
     getDefinition: (id: string) => api.get(`/xbrl/${id}/definition`),
+};
+
+// Streaming Topics API (Kafka/AMQ Streams)
+export const streamingAPI = {
+    // Topics CRUD
+    listTopics: () => api.get('/streaming/topics'),
+    getTopic: (id: string) => api.get(`/streaming/topics/${id}`),
+    createTopic: (data: any) => api.post('/streaming/topics', data),
+    updateTopic: (id: string, data: any) => api.put(`/streaming/topics/${id}`, data),
+    deleteTopic: (id: string) => api.delete(`/streaming/topics/${id}`),
+
+    // Connection testing
+    testConnection: (id: string) => api.post(`/streaming/topics/${id}/test`),
+
+    // Buffer statistics
+    getBufferStats: () => api.get('/streaming/buffer/stats'),
 };

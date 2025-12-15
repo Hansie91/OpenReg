@@ -136,7 +136,10 @@ class ArtifactGenerator:
         filepath: str,
         root_name: str = 'data',
         row_name: str = 'row',
-        compress: bool = False
+        compress: bool = False,
+        field_mappings: Optional[List[Dict[str, Any]]] = None,
+        namespace: Optional[str] = None,
+        namespace_prefix: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate XML artifact from DataFrame.
@@ -144,9 +147,12 @@ class ArtifactGenerator:
         Args:
             data: DataFrame to export
             filepath: Output file path
-            root_name: Name of root XML element
-            row_name: Name of row elements
+            root_name: Name of root XML element (used if no field_mappings)
+            row_name: Name of row elements (used if no field_mappings)
             compress: Whether to gzip compress
+            field_mappings: List of field mappings with targetXPath for hierarchical structure
+            namespace: XML namespace URI
+            namespace_prefix: Prefix for the namespace
             
         Returns:
             Dict with metadata
@@ -154,40 +160,53 @@ class ArtifactGenerator:
         try:
             logger.info(f"Generating XML artifact: {filepath}")
             
-            # Create root element
-            root = ET.Element(root_name)
-            root.set('generated_at', datetime.utcnow().isoformat())
-            root.set('row_count', str(len(data)))
-            root.set('column_count', str(len(data.columns)))
-            
-            # Add each row
-            for idx, row in data.iterrows():
-                row_elem = ET.SubElement(root, row_name)
-                row_elem.set('index', str(idx))
+            # If field_mappings provided, use hierarchical generation
+            if field_mappings and len(field_mappings) > 0:
+                xml_content = ArtifactGenerator._generate_hierarchical_xml(
+                    data=data,
+                    field_mappings=field_mappings,
+                    namespace=namespace,
+                    namespace_prefix=namespace_prefix
+                )
                 
-                for col_name, value in row.items():
-                    # Sanitize column name for XML tag
-                    safe_col_name = str(col_name).replace(' ', '_').replace('-', '_')
-                    # Remove any characters not valid in XML tags
-                    safe_col_name = ''.join(c for c in safe_col_name if c.isalnum() or c == '_')
-                    if not safe_col_name or not safe_col_name[0].isalpha():
-                        safe_col_name = 'field_' + safe_col_name
+                # Write XML with proper formatting
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(xml_content)
+            else:
+                # Fall back to flat structure
+                root = ET.Element(root_name)
+                root.set('generated_at', datetime.utcnow().isoformat())
+                root.set('row_count', str(len(data)))
+                root.set('column_count', str(len(data.columns)))
+                
+                # Add each row
+                for idx, row in data.iterrows():
+                    row_elem = ET.SubElement(root, row_name)
+                    row_elem.set('index', str(idx))
                     
-                    col_elem = ET.SubElement(row_elem, safe_col_name)
-                    
-                    # Handle different data types
-                    if pd.isna(value):
-                        col_elem.set('null', 'true')
-                        col_elem.text = ''
-                    elif isinstance(value, (pd.Timestamp, datetime)):
-                        col_elem.text = value.isoformat()
-                    else:
-                        col_elem.text = str(value)
-            
-            # Write XML directly without minidom (simpler, more reliable)
-            tree = ET.ElementTree(root)
-            with open(filepath, 'wb') as f:
-                tree.write(f, encoding='utf-8', xml_declaration=True)
+                    for col_name, value in row.items():
+                        # Sanitize column name for XML tag
+                        safe_col_name = str(col_name).replace(' ', '_').replace('-', '_')
+                        # Remove any characters not valid in XML tags
+                        safe_col_name = ''.join(c for c in safe_col_name if c.isalnum() or c == '_')
+                        if not safe_col_name or not safe_col_name[0].isalpha():
+                            safe_col_name = 'field_' + safe_col_name
+                        
+                        col_elem = ET.SubElement(row_elem, safe_col_name)
+                        
+                        # Handle different data types
+                        if pd.isna(value):
+                            col_elem.set('null', 'true')
+                            col_elem.text = ''
+                        elif isinstance(value, (pd.Timestamp, datetime)):
+                            col_elem.text = value.isoformat()
+                        else:
+                            col_elem.text = str(value)
+                
+                # Write XML directly without minidom (simpler, more reliable)
+                tree = ET.ElementTree(root)
+                with open(filepath, 'wb') as f:
+                    tree.write(f, encoding='utf-8', xml_declaration=True)
             
             # Optionally compress
             if compress:
@@ -207,6 +226,227 @@ class ArtifactGenerator:
         except Exception as e:
             logger.error(f"Failed to generate XML: {e}")
             raise
+    
+    @staticmethod
+    def _generate_hierarchical_xml(
+        data: pd.DataFrame,
+        field_mappings: List[Dict[str, Any]],
+        namespace: Optional[str] = None,
+        namespace_prefix: Optional[str] = None
+    ) -> str:
+        """
+        Generate hierarchical XML from DataFrame using XPath field mappings.
+        
+        Args:
+            data: DataFrame with the data
+            field_mappings: List of mappings with sourceColumn and targetXPath
+            namespace: Optional XML namespace
+            namespace_prefix: Optional namespace prefix
+            
+        Returns:
+            Formatted XML string
+        """
+        # Determine root element from field mappings
+        # Find the common root from all XPaths
+        xpaths = [m.get('targetXPath', '') for m in field_mappings if m.get('targetXPath')]
+        if not xpaths:
+            # No valid XPaths, use default
+            root_name = 'Document'
+        else:
+            # Extract root element name from first XPath
+            first_xpath = xpaths[0].lstrip('/')
+            root_name = first_xpath.split('/')[0] if '/' in first_xpath else first_xpath
+        
+        # Determine repeating element (the element that wraps each row)
+        # Usually it's the element that appears right after the root
+        row_wrapper = None
+        for xpath in xpaths:
+            parts = xpath.lstrip('/').split('/')
+            if len(parts) >= 2:
+                row_wrapper = parts[1]
+                break
+        
+        # Build XML structure
+        lines = ['<?xml version="1.0" encoding="UTF-8"?>']
+        
+        # Add root element with optional namespace
+        if namespace and namespace_prefix:
+            lines.append(f'<{root_name} xmlns:{namespace_prefix}="{namespace}">')
+        elif namespace:
+            lines.append(f'<{root_name} xmlns="{namespace}">')
+        else:
+            lines.append(f'<{root_name}>')
+        
+        # Process each row of data
+        for idx, row in data.iterrows():
+            # Build hierarchical structure for this row
+            row_xml = ArtifactGenerator._build_row_xml(
+                row=row,
+                field_mappings=field_mappings,
+                root_name=root_name,
+                indent_level=1
+            )
+            lines.append(row_xml)
+        
+        # Close root element
+        lines.append(f'</{root_name}>')
+        
+        return '\n'.join(lines)
+    
+    @staticmethod
+    def _build_row_xml(
+        row: pd.Series,
+        field_mappings: List[Dict[str, Any]],
+        root_name: str,
+        indent_level: int = 1
+    ) -> str:
+        """
+        Build XML for a single row based on field mappings.
+        
+        Args:
+            row: DataFrame row
+            field_mappings: List of field mappings
+            root_name: Root element name (to exclude from path)
+            indent_level: Current indentation level
+            
+        Returns:
+            XML string for this row
+        """
+        indent = '    ' * indent_level
+        
+        # Build a tree structure from mappings
+        # Key = tuple of path elements, Value = value
+        path_values = {}
+        
+        for mapping in field_mappings:
+            source_col = mapping.get('sourceColumn', '')
+            target_xpath = mapping.get('targetXPath', '')
+            default_value = mapping.get('defaultValue', '')
+            
+            if not target_xpath:
+                continue
+            
+            # Derive the target field name from XPath (last element, used by code generator)
+            target_field_name = target_xpath.split('/')[-1].replace('@', '') if target_xpath else ''
+            
+            # Get value from row - try multiple column names:
+            # 1. Source column name (for direct data)
+            # 2. Target field name (for transformed data from code generator)
+            value = None
+            
+            if source_col and source_col in row.index:
+                value = row[source_col]
+            elif target_field_name and target_field_name in row.index:
+                value = row[target_field_name]
+            
+            # Handle value conversion
+            if value is None or (hasattr(value, '__iter__') and pd.isna(value)):
+                value = default_value or ''
+            elif isinstance(value, (pd.Timestamp, datetime)):
+                value = value.isoformat()
+            else:
+                value = str(value) if value is not None else ''
+            
+            # Use default if value is empty
+            if not value and default_value:
+                value = default_value
+            
+            # Parse XPath into path parts (skip root element)
+            path_parts = target_xpath.lstrip('/').split('/')
+            if path_parts[0] == root_name:
+                path_parts = path_parts[1:]  # Remove root from path
+            
+            if path_parts:
+                path_values[tuple(path_parts)] = value
+        
+        # Build XML from path structure
+        return ArtifactGenerator._paths_to_xml(path_values, indent_level)
+    
+    @staticmethod
+    def _paths_to_xml(path_values: Dict[tuple, str], indent_level: int = 1) -> str:
+        """
+        Convert path-value pairs to XML string.
+        
+        Args:
+            path_values: Dict mapping path tuples to values
+            indent_level: Current indentation level
+            
+        Returns:
+            XML string
+        """
+        # Group by first element to build hierarchy
+        from collections import defaultdict
+        
+        # Find the row wrapper element (first level after root)
+        first_elements = set()
+        for path in path_values.keys():
+            if path:
+                first_elements.add(path[0])
+        
+        if not first_elements:
+            return ''
+        
+        lines = []
+        indent = '    ' * indent_level
+        
+        # Group paths by their first element
+        grouped = defaultdict(dict)
+        for path, value in path_values.items():
+            if path:
+                first = path[0]
+                rest = path[1:]
+                if rest:
+                    grouped[first][rest] = value
+                else:
+                    # Leaf element
+                    grouped[first][tuple()] = value
+        
+        # Recursively build XML
+        for element, sub_paths in grouped.items():
+            # Handle attributes (elements starting with @)
+            if element.startswith('@'):
+                continue  # Attributes handled separately
+            
+            # Check for leaf vs nested
+            if tuple() in sub_paths and len(sub_paths) == 1:
+                # Simple leaf element
+                value = sub_paths[tuple()]
+                escaped_value = ArtifactGenerator._escape_xml(value)
+                lines.append(f'{indent}<{element}>{escaped_value}</{element}>')
+            elif sub_paths:
+                # Nested element
+                lines.append(f'{indent}<{element}>')
+                
+                # Check for direct value
+                if tuple() in sub_paths:
+                    value = sub_paths.pop(tuple())
+                    # Element has both value and children - put value as text
+                    if value:
+                        lines.append(f'{indent}    {ArtifactGenerator._escape_xml(value)}')
+                
+                # Recursively build children
+                child_xml = ArtifactGenerator._paths_to_xml(sub_paths, indent_level + 1)
+                if child_xml:
+                    lines.append(child_xml)
+                
+                lines.append(f'{indent}</{element}>')
+            else:
+                # Empty element
+                lines.append(f'{indent}<{element}/>')
+        
+        return '\n'.join(lines)
+    
+    @staticmethod
+    def _escape_xml(value: str) -> str:
+        """Escape special XML characters."""
+        if not value:
+            return ''
+        return (str(value)
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&apos;'))
     
     @staticmethod
     def generate_txt(

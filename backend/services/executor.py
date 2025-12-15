@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_LIBRARIES = [
     'pandas', 'numpy', 'lxml', 'openpyxl', 'datetime',
     'dateutil', 'decimal', 'json', 'csv', 're', 'math',
-    'statistics', 'defusedxml', 'collections'
+    'statistics', 'defusedxml', 'collections', 'xml'
 ]
 
 BLOCKED_IMPORTS = [
@@ -173,6 +173,10 @@ class CodeExecutor:
             if op == '<<=': return x << y
             return x
         
+        def _getiter_(obj):
+            """Return an iterator for the object - required by RestrictedPython"""
+            return iter(obj)
+        
         sandbox.update({
             '__builtins__': {
                 'True': True,
@@ -208,7 +212,7 @@ class CodeExecutor:
                 'next': next,
                 'map': map,
                 'filter': filter,
-                '_getiter_': guarded_iter_unpack_sequence,
+                '_getiter_': _getiter_,
                 '_unpack_sequence_': guarded_unpack_sequence,
                 '_iter_unpack_sequence_': _iter_unpack_sequence_,
                 '_getattr_': _getattr_,
@@ -228,6 +232,8 @@ class CodeExecutor:
         import statistics
         from datetime import datetime, timedelta, date
         from decimal import Decimal
+        import xml.etree.ElementTree as ET
+        from collections import OrderedDict, defaultdict
         
         sandbox.update({
             'pd': pd,
@@ -243,6 +249,10 @@ class CodeExecutor:
             'timedelta': timedelta,
             'date': date,
             'Decimal': Decimal,
+            'ET': ET,
+            'ElementTree': ET,
+            'OrderedDict': OrderedDict,
+            'defaultdict': defaultdict,
         })
         
         # Inject utility functions

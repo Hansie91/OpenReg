@@ -96,10 +96,29 @@ class StorageService:
         
         return f"s3://{bucket}/{unique_filename}"
     
-    def download_artifact(self, object_name: str) -> bytes:
-        """Download an artifact from storage"""
+    def download_artifact(self, object_name: str, bucket: str = None) -> bytes:
+        """
+        Download an artifact from storage.
+        
+        Args:
+            object_name: Either plain object name or storage_uri (s3://bucket/name)
+            bucket: Optional bucket override (uses default if not provided)
+            
+        Returns:
+            Artifact data as bytes
+        """
         try:
-            response = self.client.get_object(self.bucket, object_name)
+            # Handle storage_uri format (s3://bucket/object_name)
+            if object_name.startswith("s3://"):
+                # Parse s3://bucket/object_name
+                uri_parts = object_name[5:].split("/", 1)  # Remove "s3://"
+                if len(uri_parts) == 2:
+                    bucket = uri_parts[0]
+                    object_name = uri_parts[1]
+            
+            target_bucket = bucket or self.bucket
+            
+            response = self.client.get_object(target_bucket, object_name)
             data = response.read()
             response.close()
             response.release_conn()

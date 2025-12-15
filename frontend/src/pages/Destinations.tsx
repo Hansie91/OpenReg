@@ -59,13 +59,21 @@ export default function Destinations() {
         password: '',
         directory: '/',
         retry_count: '3',
+        retry_backoff: 'exponential',
+        retry_base_delay: '5',
+        retry_max_delay: '300',
     });
+    const [showAdvancedRetry, setShowAdvancedRetry] = useState(false);
+    const [showAdvancedRetryEdit, setShowAdvancedRetryEdit] = useState(false);
     const [editFormData, setEditFormData] = useState({
         name: '',
         host: '',
         port: '',
         directory: '',
         retry_count: '',
+        retry_backoff: 'exponential',
+        retry_base_delay: '5',
+        retry_max_delay: '300',
         password: '',  // Only update if provided
     });
 
@@ -82,7 +90,7 @@ export default function Destinations() {
             onSuccess: () => {
                 queryClient.invalidateQueries('destinations');
                 setShowCreateModal(false);
-                setFormData({ name: '', type: 'sftp', host: '', port: '22', username: '', password: '', directory: '/', retry_count: '3' });
+                setFormData({ name: '', type: 'sftp', host: '', port: '22', username: '', password: '', directory: '/', retry_count: '3', retry_backoff: 'exponential', retry_base_delay: '5', retry_max_delay: '300' });
                 setTestResult(null);
             },
         }
@@ -114,6 +122,9 @@ export default function Destinations() {
             port: String(dest.port || 22),
             directory: dest.directory || '/',
             retry_count: String(dest.retry_count || 3),
+            retry_backoff: dest.retry_backoff || 'exponential',
+            retry_base_delay: String(dest.retry_base_delay || 5),
+            retry_max_delay: String(dest.retry_max_delay || 300),
             password: '',  // Empty - only update if user provides new password
         });
         setEditingDest(dest);
@@ -127,6 +138,9 @@ export default function Destinations() {
             port: parseInt(editFormData.port),
             directory: editFormData.directory,
             retry_count: parseInt(editFormData.retry_count),
+            retry_backoff: editFormData.retry_backoff,
+            retry_base_delay: parseInt(editFormData.retry_base_delay),
+            retry_max_delay: parseInt(editFormData.retry_max_delay),
         };
         // Only include password if user provided a new one
         if (editFormData.password) {
@@ -157,6 +171,9 @@ export default function Destinations() {
             password: formData.password,
             directory: formData.directory || '/',
             retry_count: parseInt(formData.retry_count) || 3,
+            retry_backoff: formData.retry_backoff,
+            retry_base_delay: parseInt(formData.retry_base_delay) || 5,
+            retry_max_delay: parseInt(formData.retry_max_delay) || 300,
         });
     };
 
@@ -423,10 +440,67 @@ export default function Destinations() {
                                         <input
                                             type="number"
                                             className="input"
+                                            min="1"
+                                            max="10"
                                             value={formData.retry_count}
                                             onChange={(e) => setFormData({ ...formData, retry_count: e.target.value })}
                                         />
                                     </div>
+                                </div>
+
+                                {/* Advanced Retry Settings */}
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAdvancedRetry(!showAdvancedRetry)}
+                                        className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                    >
+                                        <span>{showAdvancedRetry ? '▼' : '▶'}</span>
+                                        Advanced Retry Settings
+                                    </button>
+
+                                    {showAdvancedRetry && (
+                                        <div className="mt-3 p-4 bg-gray-50 rounded-lg space-y-4">
+                                            <div>
+                                                <label className="input-label">Backoff Strategy</label>
+                                                <select
+                                                    className="input"
+                                                    value={formData.retry_backoff}
+                                                    onChange={(e) => setFormData({ ...formData, retry_backoff: e.target.value })}
+                                                >
+                                                    <option value="exponential">Exponential (2^n × base delay)</option>
+                                                    <option value="linear">Linear (n × base delay)</option>
+                                                    <option value="fixed">Fixed (constant delay)</option>
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="input-label">Base Delay (seconds)</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        min="1"
+                                                        max="60"
+                                                        value={formData.retry_base_delay}
+                                                        onChange={(e) => setFormData({ ...formData, retry_base_delay: e.target.value })}
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Initial delay between retries</p>
+                                                </div>
+                                                <div>
+                                                    <label className="input-label">Max Delay (seconds)</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        min="10"
+                                                        max="3600"
+                                                        value={formData.retry_max_delay}
+                                                        onChange={(e) => setFormData({ ...formData, retry_max_delay: e.target.value })}
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Maximum delay cap</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -514,12 +588,68 @@ export default function Destinations() {
                                     <input
                                         type="number"
                                         className="input"
+                                        min="1"
+                                        max="10"
                                         value={editFormData.retry_count}
                                         onChange={(e) => setEditFormData({ ...editFormData, retry_count: e.target.value })}
                                     />
                                 </div>
                             </div>
-                            <div>
+
+                            {/* Advanced Retry Settings for Edit */}
+                            <div className="mt-4 border-t border-gray-100 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvancedRetryEdit(!showAdvancedRetryEdit)}
+                                    className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                >
+                                    <span>{showAdvancedRetryEdit ? '▼' : '▶'}</span>
+                                    Advanced Retry Settings
+                                </button>
+
+                                {showAdvancedRetryEdit && (
+                                    <div className="mt-3 p-4 bg-gray-50 rounded-lg space-y-4">
+                                        <div>
+                                            <label className="input-label">Backoff Strategy</label>
+                                            <select
+                                                className="input"
+                                                value={editFormData.retry_backoff}
+                                                onChange={(e) => setEditFormData({ ...editFormData, retry_backoff: e.target.value })}
+                                            >
+                                                <option value="exponential">Exponential (2^n × base delay)</option>
+                                                <option value="linear">Linear (n × base delay)</option>
+                                                <option value="fixed">Fixed (constant delay)</option>
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="input-label">Base Delay (seconds)</label>
+                                                <input
+                                                    type="number"
+                                                    className="input"
+                                                    min="1"
+                                                    max="60"
+                                                    value={editFormData.retry_base_delay}
+                                                    onChange={(e) => setEditFormData({ ...editFormData, retry_base_delay: e.target.value })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="input-label">Max Delay (seconds)</label>
+                                                <input
+                                                    type="number"
+                                                    className="input"
+                                                    min="10"
+                                                    max="3600"
+                                                    value={editFormData.retry_max_delay}
+                                                    onChange={(e) => setEditFormData({ ...editFormData, retry_max_delay: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-4">
                                 <label className="input-label">New Password (leave empty to keep current)</label>
                                 <input
                                     type="password"

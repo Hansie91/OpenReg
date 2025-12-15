@@ -5,7 +5,7 @@ import logging
 
 from database import engine, Base
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -64,6 +64,7 @@ app.include_router(validations.router, prefix=f"{API_PREFIX}/validations", tags=
 app.include_router(exceptions.router, prefix=f"{API_PREFIX}/exceptions", tags=["Exceptions"])
 app.include_router(schedules.router, prefix=f"{API_PREFIX}/schedules", tags=["Schedules"])
 app.include_router(destinations.router, prefix=f"{API_PREFIX}/destinations", tags=["Destinations"])
+app.include_router(delivery.router, prefix=f"{API_PREFIX}/delivery", tags=["Delivery"])
 app.include_router(runs.router, prefix=f"{API_PREFIX}/runs", tags=["Job Runs"])
 app.include_router(logs.router, prefix=f"{API_PREFIX}/runs", tags=["Log Streaming"])
 app.include_router(submissions.router, prefix=f"{API_PREFIX}/submissions", tags=["Submissions"])
@@ -71,6 +72,7 @@ app.include_router(admin.router, prefix=f"{API_PREFIX}/admin", tags=["Administra
 app.include_router(schemas.router, prefix=f"{API_PREFIX}/schemas", tags=["Schemas"])
 app.include_router(dashboard.router, prefix=f"{API_PREFIX}/dashboard", tags=["Dashboard"])
 app.include_router(xbrl.router, prefix=f"{API_PREFIX}/xbrl", tags=["XBRL Taxonomies"])
+app.include_router(streaming.router, prefix=f"{API_PREFIX}", tags=["Streaming"])
 
 
 @app.get("/")

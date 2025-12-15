@@ -1,5 +1,5 @@
 import { useQuery } from 'react-query';
-import { runsAPI, reportsAPI, api } from '../services/api';
+import { runsAPI, reportsAPI, api, deliveryAPI } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 
 // API URL removed - now using authenticated downloads via API client
@@ -62,6 +62,11 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
         </svg>
     ),
+    Send: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+        </svg>
+    ),
 };
 
 const getStatusBadge = (status: string) => {
@@ -95,6 +100,8 @@ export default function Runs() {
     const [logsLoading, setLogsLoading] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const [expandedArtifact, setExpandedArtifact] = useState<string | null>(null);
+    const [artifactDeliveries, setArtifactDeliveries] = useState<Record<string, any[]>>({});
 
     // Helper to remove empty params before API call
     const cleanParams = (params: Record<string, any>) => {
@@ -294,7 +301,7 @@ export default function Runs() {
                                             <button
                                                 onClick={async () => {
                                                     try {
-                                                        await runsAPI.downloadArtifact(run.id, run.first_artifact_id, `report_${run.id.slice(0, 8)}.csv`);
+                                                        await runsAPI.downloadArtifact(run.id, run.first_artifact_id, run.first_artifact_filename || `report_${run.id.slice(0, 8)}`);
                                                     } catch (err) {
                                                         console.error('Download failed:', err);
                                                         alert('Download failed. Please try again.');
@@ -417,32 +424,86 @@ export default function Runs() {
                                     <h4 className="text-sm font-semibold text-gray-900 mb-3">Artifacts</h4>
                                     <div className="space-y-2">
                                         {runDetails.artifacts.map((artifact: any) => (
-                                            <div key={artifact.id} className="card p-4 flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-indigo-600">
-                                                        <Icons.Document />
+                                            <div key={artifact.id} className="card p-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-indigo-600">
+                                                            <Icons.Document />
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-medium text-gray-900">{artifact.filename}</p>
+                                                            <p className="text-xs text-gray-500">
+                                                                {artifact.mime_type} • {(artifact.size_bytes / 1024).toFixed(1)} KB
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <p className="font-medium text-gray-900">{artifact.filename}</p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {artifact.mime_type} • {(artifact.size_bytes / 1024).toFixed(1)} KB
-                                                        </p>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={async () => {
+                                                                // Toggle delivery history view
+                                                                if (expandedArtifact === artifact.id) {
+                                                                    setExpandedArtifact(null);
+                                                                } else {
+                                                                    setExpandedArtifact(artifact.id);
+                                                                    // Fetch delivery history
+                                                                    try {
+                                                                        const res = await deliveryAPI.getArtifactDeliveries(artifact.id);
+                                                                        setArtifactDeliveries(prev => ({
+                                                                            ...prev,
+                                                                            [artifact.id]: res.data.delivery_attempts || []
+                                                                        }));
+                                                                    } catch (err) {
+                                                                        console.error('Failed to fetch deliveries:', err);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="btn btn-secondary btn-sm"
+                                                            title="View delivery history"
+                                                        >
+                                                            <Icons.Send />
+                                                            <span className="ml-1.5">Deliveries</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await runsAPI.downloadArtifact(selectedRunId!, artifact.id, artifact.filename);
+                                                                } catch (err) {
+                                                                    console.error('Download failed:', err);
+                                                                    alert('Download failed. Please try again.');
+                                                                }
+                                                            }}
+                                                            className="btn btn-secondary btn-sm"
+                                                        >
+                                                            <Icons.Download />
+                                                            <span className="ml-1.5">Download</span>
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={async () => {
-                                                        try {
-                                                            await runsAPI.downloadArtifact(selectedRunId!, artifact.id, artifact.filename);
-                                                        } catch (err) {
-                                                            console.error('Download failed:', err);
-                                                            alert('Download failed. Please try again.');
-                                                        }
-                                                    }}
-                                                    className="btn btn-secondary btn-sm"
-                                                >
-                                                    <Icons.Download />
-                                                    <span className="ml-1.5">Download</span>
-                                                </button>
+
+                                                {/* Delivery History Expansion */}
+                                                {expandedArtifact === artifact.id && (
+                                                    <div className="mt-3 pt-3 border-t border-gray-100">
+                                                        <h5 className="text-xs font-semibold text-gray-700 mb-2">Delivery History</h5>
+                                                        {artifactDeliveries[artifact.id]?.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                {artifactDeliveries[artifact.id].map((d: any, idx: number) => (
+                                                                    <div key={idx} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className={`w-2 h-2 rounded-full ${d.status === 'success' ? 'bg-green-500' : d.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'}`}></span>
+                                                                            <span className="font-medium">{d.destination_name}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                                                                            <span className={`badge ${d.status === 'success' ? 'badge-success' : d.status === 'failed' ? 'badge-error' : 'badge-warning'}`}>{d.status}</span>
+                                                                            <span>{d.completed_at ? new Date(d.completed_at).toLocaleString() : 'Pending'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-gray-500">No deliveries for this artifact.</p>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

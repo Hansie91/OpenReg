@@ -30,7 +30,11 @@ class DestinationCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=1)
     directory: str = Field(default="/", max_length=500)
+    # Retry Policy
     retry_count: int = Field(default=3, ge=1, le=10)
+    retry_backoff: str = Field(default="exponential", pattern="^(exponential|linear|fixed)$")
+    retry_base_delay: int = Field(default=5, ge=1, le=60, description="Base delay in seconds")
+    retry_max_delay: int = Field(default=300, ge=10, le=3600, description="Max delay in seconds")
     description: Optional[str] = None
 
 
@@ -41,7 +45,11 @@ class DestinationUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=255)
     password: Optional[str] = None  # Only update if provided
     directory: Optional[str] = Field(None, max_length=500)
+    # Retry Policy
     retry_count: Optional[int] = Field(None, ge=1, le=10)
+    retry_backoff: Optional[str] = Field(None, pattern="^(exponential|linear|fixed)$")
+    retry_base_delay: Optional[int] = Field(None, ge=1, le=60)
+    retry_max_delay: Optional[int] = Field(None, ge=10, le=3600)
     description: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -55,7 +63,11 @@ class DestinationResponse(BaseModel):
     port: int
     username: str
     directory: str
+    # Retry Policy
     retry_count: int
+    retry_backoff: str = "exponential"
+    retry_base_delay: int = 5
+    retry_max_delay: int = 300
     description: Optional[str]
     is_active: bool
     last_delivery_at: Optional[datetime] = None
@@ -86,7 +98,7 @@ class ConnectionTestResponse(BaseModel):
 def destination_to_response(destination: models.Destination) -> DestinationResponse:
     """Convert database model to response, extracting config fields."""
     config = destination.config or {}
-    retry_policy = destination.retry_policy or {"max_attempts": 3}
+    retry_policy = destination.retry_policy or {"max_attempts": 3, "backoff": "exponential", "base_delay": 5, "max_delay": 300}
     
     # Get username from encrypted credentials
     username = "****"  # Default masked
@@ -107,6 +119,9 @@ def destination_to_response(destination: models.Destination) -> DestinationRespo
         username=username,
         directory=config.get("directory", "/"),
         retry_count=retry_policy.get("max_attempts", 3),
+        retry_backoff=retry_policy.get("backoff", "exponential"),
+        retry_base_delay=retry_policy.get("base_delay", 5),
+        retry_max_delay=retry_policy.get("max_delay", 300),
         description=destination.description,
         is_active=destination.is_active,
         last_delivery_at=config.get("last_delivery_at"),
@@ -155,10 +170,12 @@ async def create_destination(
         "directory": data.directory,
     }
     
-    # Build retry policy
+    # Build retry policy with all configurable settings
     retry_policy = {
         "max_attempts": data.retry_count,
-        "backoff": "exponential"
+        "backoff": data.retry_backoff,
+        "base_delay": data.retry_base_delay,
+        "max_delay": data.retry_max_delay
     }
     
     # Create destination
@@ -234,10 +251,16 @@ async def update_destination(
     destination.config = config
     
     # Update retry policy
+    retry_policy = destination.retry_policy or {"max_attempts": 3, "backoff": "exponential", "base_delay": 5, "max_delay": 300}
     if data.retry_count is not None:
-        retry_policy = destination.retry_policy or {}
         retry_policy["max_attempts"] = data.retry_count
-        destination.retry_policy = retry_policy
+    if data.retry_backoff is not None:
+        retry_policy["backoff"] = data.retry_backoff
+    if data.retry_base_delay is not None:
+        retry_policy["base_delay"] = data.retry_base_delay
+    if data.retry_max_delay is not None:
+        retry_policy["max_delay"] = data.retry_max_delay
+    destination.retry_policy = retry_policy
     
     # Update credentials if password provided
     if data.password is not None:
