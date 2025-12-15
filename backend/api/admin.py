@@ -706,3 +706,152 @@ async def get_audit_stats(
         by_action=by_action,
         recent_activity=recent_activity
     )
+
+
+# === System Health ===
+
+@router.get("/health")
+async def get_system_health(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get system health status including:
+    - Database connection status
+    - Entity counts (reports, connectors, users, etc.)
+    - Recent job run statistics
+    - Streaming buffer status
+    - CPU and memory usage
+    """
+    import time
+    from datetime import timedelta
+    
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": {},
+        "database": {},
+        "entities": {},
+        "jobs": {},
+        "streaming": {}
+    }
+    
+    # System metrics (CPU, Memory, Disk)
+    try:
+        import os
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        
+        # Use appropriate disk path for OS
+        disk_path = 'C:/' if os.name == 'nt' else '/'
+        disk = psutil.disk_usage(disk_path)
+        
+        health["system"] = {
+            "cpu_percent": cpu_percent,
+            "memory_used_gb": round(memory.used / (1024**3), 2),
+            "memory_total_gb": round(memory.total / (1024**3), 2),
+            "memory_percent": memory.percent,
+            "disk_used_gb": round(disk.used / (1024**3), 2),
+            "disk_total_gb": round(disk.total / (1024**3), 2),
+            "disk_percent": disk.percent
+        }
+    except Exception as e:
+        health["system"] = {"error": str(e)}
+    
+    # Database health
+    try:
+        from sqlalchemy import text
+        start = time.time()
+        db.execute(text("SELECT 1"))
+        db_latency = (time.time() - start) * 1000
+        health["database"] = {
+            "status": "connected",
+            "latency_ms": round(db_latency, 2)
+        }
+    except Exception as e:
+        health["database"] = {"status": "error", "error": str(e)}
+        health["status"] = "degraded"
+    
+    # Entity counts
+    try:
+        health["entities"] = {
+            "reports": db.query(models.Report).filter(
+                models.Report.tenant_id == current_user.tenant_id
+            ).count(),
+            "connectors": db.query(models.Connector).filter(
+                models.Connector.tenant_id == current_user.tenant_id
+            ).count(),
+            "users": db.query(models.User).filter(
+                models.User.tenant_id == current_user.tenant_id
+            ).count(),
+            "schedules": db.query(models.Schedule).filter(
+                models.Schedule.tenant_id == current_user.tenant_id
+            ).count(),
+            "validation_rules": db.query(models.ValidationRule).filter(
+                models.ValidationRule.tenant_id == current_user.tenant_id
+            ).count()
+        }
+    except Exception as e:
+        health["entities"] = {"error": str(e)}
+    
+    # Job run statistics (last 24 hours)
+    try:
+        yesterday = datetime.utcnow() - timedelta(hours=24)
+        
+        job_stats = db.query(
+            models.JobRun.status,
+            func.count(models.JobRun.id).label('count')
+        ).filter(
+            models.JobRun.tenant_id == current_user.tenant_id,
+            models.JobRun.created_at >= yesterday
+        ).group_by(models.JobRun.status).all()
+        
+        total_jobs = sum(count for _, count in job_stats)
+        jobs_by_status = {status.value: count for status, count in job_stats}
+        
+        # Average duration for completed jobs
+        avg_duration = db.query(
+            func.avg(models.JobRun.duration_ms)
+        ).filter(
+            models.JobRun.tenant_id == current_user.tenant_id,
+            models.JobRun.status == models.JobRunStatus.SUCCESS,
+            models.JobRun.created_at >= yesterday
+        ).scalar()
+        
+        health["jobs"] = {
+            "last_24h_total": total_jobs,
+            "by_status": jobs_by_status,
+            "avg_duration_ms": round(avg_duration, 0) if avg_duration else None
+        }
+    except Exception as e:
+        health["jobs"] = {"error": str(e)}
+    
+    # Streaming buffer status
+    try:
+        topics = db.query(models.StreamingTopic).filter(
+            models.StreamingTopic.tenant_id == current_user.tenant_id,
+            models.StreamingTopic.is_active == True
+        ).all()
+        
+        streaming_stats = []
+        for topic in topics:
+            pending = db.query(models.StreamingBuffer).filter(
+                models.StreamingBuffer.topic_id == topic.id,
+                models.StreamingBuffer.processed == False
+            ).count()
+            
+            streaming_stats.append({
+                "topic": topic.name,
+                "pending_messages": pending
+            })
+        
+        health["streaming"] = {
+            "active_topics": len(topics),
+            "topics": streaming_stats
+        }
+    except Exception as e:
+        health["streaming"] = {"error": str(e)}
+    
+    return health
+

@@ -39,6 +39,11 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
         </svg>
     ),
+    Heart: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+        </svg>
+    ),
 };
 
 // User interface
@@ -63,7 +68,7 @@ interface Role {
     created_at: string;
 }
 
-type TabType = 'users' | 'roles' | 'audit';
+type TabType = 'users' | 'roles' | 'audit' | 'health';
 
 export default function Admin() {
     const queryClient = useQueryClient();
@@ -116,6 +121,11 @@ export default function Admin() {
 
     const { data: auditData, isLoading: auditsLoading } = useQuery(['admin-audit', auditFilters], () =>
         adminAPI.getAuditLogs(auditFilters).then((res) => res.data)
+    );
+
+    const { data: healthData, isLoading: healthLoading, refetch: refetchHealth } = useQuery('admin-health', () =>
+        adminAPI.getSystemHealth().then((res) => res.data),
+        { refetchInterval: 30000 }
     );
 
     // Mutations
@@ -219,6 +229,7 @@ export default function Admin() {
         { id: 'users' as TabType, label: 'Users', icon: Icons.Users },
         { id: 'roles' as TabType, label: 'Roles', icon: Icons.Shield },
         { id: 'audit' as TabType, label: 'Audit Log', icon: Icons.Clock },
+        { id: 'health' as TabType, label: 'System Health', icon: Icons.Heart },
     ];
 
     const formatAction = (action: string) => {
@@ -592,6 +603,208 @@ export default function Admin() {
                             <h3 className="empty-state-title">No audit logs yet</h3>
                             <p className="empty-state-description">
                                 Activity will appear here as actions are performed in the system
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* System Health Tab */}
+            {activeTab === 'health' && (
+                <div>
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-900">System Health</h2>
+                            <p className="text-sm text-gray-500">Monitor system status and performance metrics</p>
+                        </div>
+                        <button onClick={() => refetchHealth()} className="btn btn-secondary btn-sm">
+                            Refresh
+                        </button>
+                    </div>
+
+                    {healthLoading ? (
+                        <div className="card p-12 text-center">
+                            <div className="spinner mx-auto text-indigo-600"></div>
+                        </div>
+                    ) : healthData ? (
+                        <div className="space-y-6">
+                            {/* Overall Status */}
+                            <div className="card p-6">
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${healthData.status === 'healthy' ? 'bg-green-100' : 'bg-yellow-100'
+                                        }`}>
+                                        <Icons.Heart />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900 capitalize">{healthData.status}</h3>
+                                        <p className="text-sm text-gray-500">
+                                            Last checked: {new Date(healthData.timestamp).toLocaleTimeString()}
+                                        </p>
+                                    </div>
+                                    <span className={`ml-auto badge ${healthData.status === 'healthy' ? 'badge-success' : 'badge-warning'
+                                        }`}>
+                                        {healthData.status === 'healthy' ? 'All Systems Operational' : 'Degraded'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Metrics Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {/* Database */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Database</h4>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`w-3 h-3 rounded-full ${healthData.database?.status === 'connected' ? 'bg-green-500' : 'bg-red-500'
+                                            }`}></span>
+                                        <span className="font-medium text-gray-900 capitalize">
+                                            {healthData.database?.status || 'Unknown'}
+                                        </span>
+                                    </div>
+                                    {healthData.database?.latency_ms && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            Latency: {healthData.database.latency_ms}ms
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* CPU */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">CPU Usage</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.system?.cpu_percent ?? '—'}%
+                                    </p>
+                                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                        <div
+                                            className={`h-2 rounded-full ${(healthData.system?.cpu_percent || 0) > 80 ? 'bg-red-500' :
+                                                    (healthData.system?.cpu_percent || 0) > 60 ? 'bg-yellow-500' : 'bg-green-500'
+                                                }`}
+                                            style={{ width: `${healthData.system?.cpu_percent || 0}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+
+                                {/* Memory */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Memory Usage</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.system?.memory_percent ?? '—'}%
+                                    </p>
+                                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                        <div
+                                            className={`h-2 rounded-full ${(healthData.system?.memory_percent || 0) > 85 ? 'bg-red-500' :
+                                                    (healthData.system?.memory_percent || 0) > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                                                }`}
+                                            style={{ width: `${healthData.system?.memory_percent || 0}%` }}
+                                        ></div>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        {healthData.system?.memory_used_gb} / {healthData.system?.memory_total_gb} GB
+                                    </p>
+                                </div>
+
+                                {/* Disk */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Disk Usage</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.system?.disk_percent ?? '—'}%
+                                    </p>
+                                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                        <div
+                                            className={`h-2 rounded-full ${(healthData.system?.disk_percent || 0) > 90 ? 'bg-red-500' :
+                                                    (healthData.system?.disk_percent || 0) > 75 ? 'bg-yellow-500' : 'bg-green-500'
+                                                }`}
+                                            style={{ width: `${healthData.system?.disk_percent || 0}%` }}
+                                        ></div>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        {healthData.system?.disk_used_gb} / {healthData.system?.disk_total_gb} GB
+                                    </p>
+                                </div>
+
+                                {/* Jobs (24h) */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Jobs (24h)</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.jobs?.last_24h_total || 0}
+                                    </p>
+                                    {healthData.jobs?.by_status && (
+                                        <div className="flex gap-2 mt-2 flex-wrap">
+                                            {Object.entries(healthData.jobs.by_status).map(([status, count]) => (
+                                                <span key={status} className={`text-xs px-2 py-0.5 rounded ${status === 'success' ? 'bg-green-100 text-green-700' :
+                                                    status === 'failed' ? 'bg-red-100 text-red-700' :
+                                                        'bg-gray-100 text-gray-700'
+                                                    }`}>
+                                                    {status}: {count as number}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Avg Duration */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Avg Job Duration</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.jobs?.avg_duration_ms
+                                            ? `${(healthData.jobs.avg_duration_ms / 1000).toFixed(1)}s`
+                                            : '—'}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-2">Based on successful jobs</p>
+                                </div>
+
+                                {/* Streaming */}
+                                <div className="card p-5">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-3">Streaming Topics</h4>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {healthData.streaming?.active_topics || 0}
+                                    </p>
+                                    {healthData.streaming?.topics?.length > 0 && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            Pending: {healthData.streaming.topics.reduce((sum: number, t: any) => sum + t.pending_messages, 0)} messages
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Entity Counts */}
+                            <div className="card p-6">
+                                <h4 className="text-sm font-medium text-gray-500 mb-4">System Entities</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                    {healthData.entities && Object.entries(healthData.entities).map(([key, count]) => (
+                                        <div key={key} className="text-center p-3 bg-gray-50 rounded-lg">
+                                            <p className="text-2xl font-bold text-gray-900">{count as number}</p>
+                                            <p className="text-xs text-gray-500 capitalize">{key.replace('_', ' ')}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Streaming Details */}
+                            {healthData.streaming?.topics?.length > 0 && (
+                                <div className="card p-6">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-4">Streaming Buffer Status</h4>
+                                    <div className="space-y-3">
+                                        {healthData.streaming.topics.map((topic: any, idx: number) => (
+                                            <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <span className="font-medium text-gray-900">{topic.topic}</span>
+                                                <span className={`badge ${topic.pending_messages > 1000 ? 'badge-warning' : 'badge-success'
+                                                    }`}>
+                                                    {topic.pending_messages.toLocaleString()} pending
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="empty-state">
+                            <div className="text-gray-300 mx-auto">
+                                <Icons.Heart />
+                            </div>
+                            <h3 className="empty-state-title">Unable to load health data</h3>
+                            <p className="empty-state-description">
+                                Try refreshing the page
                             </p>
                         </div>
                     )}

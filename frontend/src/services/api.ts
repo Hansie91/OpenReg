@@ -199,6 +199,7 @@ export const adminAPI = {
     deleteRole: (id: string) => api.delete(`/admin/roles/${id}`),
     getAuditLogs: (params?: any) => api.get('/admin/audit', { params }),
     getAuditStats: () => api.get('/admin/audit/stats'),
+    getSystemHealth: () => api.get('/admin/health'),
 };
 
 // Schemas API (XSD Management)
