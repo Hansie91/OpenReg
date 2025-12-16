@@ -153,6 +153,20 @@ export default function Reports() {
     const [csvQuote, setCsvQuote] = useState('"');
     const [csvHeader, setCsvHeader] = useState(true);
 
+    // XML options
+    const [xmlRootElement, setXmlRootElement] = useState('Report');
+    const [xmlIncludeDeclaration, setXmlIncludeDeclaration] = useState(true);
+    const [xmlPrettyPrint, setXmlPrettyPrint] = useState(true);
+
+    // JSON options
+    const [jsonPrettyPrint, setJsonPrettyPrint] = useState(true);
+    const [jsonWrapInArray, setJsonWrapInArray] = useState(false);
+
+    // TXT (Fixed-width) options
+    const [txtRecordLength, setTxtRecordLength] = useState(500);
+    const [txtPaddingChar, setTxtPaddingChar] = useState(' ');
+    const [txtLineEnding, setTxtLineEnding] = useState('CRLF');
+
     // Filename configuration
     const [filenameTemplate, setFilenameTemplate] = useState('{report_name}_{business_date}_{version}');
     const [filenameTokens, setFilenameTokens] = useState({
@@ -750,6 +764,207 @@ export default function Reports() {
                                             </div>
                                         </div>
 
+                                        {/* XML Options - shown when XML is selected */}
+                                        {outputFormat === 'xml' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">XML Options</h4>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="input-label">Root Element Name</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input mt-1"
+                                                            placeholder="e.g., Report"
+                                                            value={xmlRootElement}
+                                                            onChange={(e) => setXmlRootElement(e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={xmlIncludeDeclaration}
+                                                            onChange={(e) => setXmlIncludeDeclaration(e.target.checked)}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm text-gray-700">Include XML declaration</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={xmlPrettyPrint}
+                                                            onChange={(e) => setXmlPrettyPrint(e.target.checked)}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
+                                                    </label>
+                                                </div>
+                                                {/* XML Preview */}
+                                                <div className="mt-4 bg-gray-900 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-gray-400 text-xs uppercase">Output Preview</span>
+                                                        <span className="text-gray-500 text-xs">XML</span>
+                                                    </div>
+                                                    <pre className="text-green-400 font-mono text-sm overflow-x-auto">{xmlPrettyPrint
+                                                        ? `${xmlIncludeDeclaration ? '<?xml version="1.0"?>\n' : ''}<${xmlRootElement}>\n  <Record>\n    <Field1>value1</Field1>\n  </Record>\n</${xmlRootElement}>`
+                                                        : `${xmlIncludeDeclaration ? '<?xml version="1.0"?>' : ''}<${xmlRootElement}><Record><Field1>value1</Field1></Record></${xmlRootElement}>`
+                                                    }</pre>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* JSON Options - shown when JSON is selected */}
+                                        {outputFormat === 'json' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">JSON Options</h4>
+                                                <div className="space-y-4">
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={jsonPrettyPrint}
+                                                            onChange={(e) => setJsonPrettyPrint(e.target.checked)}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={jsonWrapInArray}
+                                                            onChange={(e) => setJsonWrapInArray(e.target.checked)}
+                                                            className="rounded"
+                                                        />
+                                                        <span className="text-sm text-gray-700">Wrap in array</span>
+                                                    </label>
+                                                </div>
+                                                {/* JSON Preview */}
+                                                <div className="mt-4 bg-gray-900 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-gray-400 text-xs uppercase">Output Preview</span>
+                                                        <span className="text-gray-500 text-xs">JSON</span>
+                                                    </div>
+                                                    <pre className="text-green-400 font-mono text-sm overflow-x-auto">{jsonPrettyPrint
+                                                        ? (jsonWrapInArray
+                                                            ? `[\n  {\n    "field1": "value1",\n    "field2": "value2"\n  }\n]`
+                                                            : `{\n  "field1": "value1",\n  "field2": "value2"\n}`)
+                                                        : (jsonWrapInArray
+                                                            ? `[{"field1":"value1","field2":"value2"}]`
+                                                            : `{"field1":"value1","field2":"value2"}`)
+                                                    }</pre>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* CSV Options - shown when CSV is selected */}
+                                        {outputFormat === 'csv' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">CSV Options</h4>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="input-label">Delimiter</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={csvDelimiter}
+                                                            onChange={(e) => setCsvDelimiter(e.target.value)}
+                                                        >
+                                                            <option value=",">Comma (,)</option>
+                                                            <option value=";">Semicolon (;)</option>
+                                                            <option value="\t">Tab</option>
+                                                            <option value="|">Pipe (|)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="input-label">Quote Character</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={csvQuote}
+                                                            onChange={(e) => setCsvQuote(e.target.value)}
+                                                        >
+                                                            <option value='"'>Double Quote (")</option>
+                                                            <option value="'">Single Quote (')</option>
+                                                            <option value="">None</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={csvHeader}
+                                                                onChange={(e) => setCsvHeader(e.target.checked)}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm text-gray-700">Include header row</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                {/* CSV Preview */}
+                                                <div className="mt-4 bg-gray-900 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-gray-400 text-xs uppercase">Output Preview</span>
+                                                        <span className="text-gray-500 text-xs">CSV</span>
+                                                    </div>
+                                                    <pre className="text-green-400 font-mono text-sm overflow-x-auto">{`${csvHeader ? `${csvQuote}field1${csvQuote}${csvDelimiter}${csvQuote}field2${csvQuote}${csvDelimiter}${csvQuote}field3${csvQuote}\n` : ''}${csvQuote}value1${csvQuote}${csvDelimiter}${csvQuote}value2${csvQuote}${csvDelimiter}${csvQuote}value3${csvQuote}\n${csvQuote}value4${csvQuote}${csvDelimiter}${csvQuote}value5${csvQuote}${csvDelimiter}${csvQuote}value6${csvQuote}`}</pre>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TXT (Fixed-Width) Options - shown when TXT is selected */}
+                                        {outputFormat === 'txt' && (
+                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                                                <h4 className="font-medium text-gray-900 mb-4">Fixed-Width Text Options</h4>
+                                                <div className="space-y-4">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="input-label">Total Record Length</label>
+                                                            <input
+                                                                type="number"
+                                                                className="input mt-1"
+                                                                placeholder="e.g., 500"
+                                                                value={txtRecordLength}
+                                                                onChange={(e) => setTxtRecordLength(parseInt(e.target.value) || 500)}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="input-label">Padding Character</label>
+                                                            <select
+                                                                className="select mt-1"
+                                                                value={txtPaddingChar}
+                                                                onChange={(e) => setTxtPaddingChar(e.target.value)}
+                                                            >
+                                                                <option value=" ">Space</option>
+                                                                <option value="0">Zero (0)</option>
+                                                                <option value="_">Underscore (_)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="input-label">Line Ending</label>
+                                                        <select
+                                                            className="select mt-1"
+                                                            value={txtLineEnding}
+                                                            onChange={(e) => setTxtLineEnding(e.target.value)}
+                                                        >
+                                                            <option value="CRLF">Windows (CRLF)</option>
+                                                            <option value="LF">Unix (LF)</option>
+                                                            <option value="CR">Classic Mac (CR)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="bg-white p-3 rounded border border-gray-200">
+                                                        <p className="text-sm text-gray-500">
+                                                            <strong>Note:</strong> Column positions are defined in your Python code using the <code className="text-indigo-600">format_fixed_width()</code> helper function.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {/* TXT Preview */}
+                                                <div className="mt-4 bg-gray-900 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-gray-400 text-xs uppercase">Output Preview</span>
+                                                        <span className="text-gray-500 text-xs">TXT (Record: {txtRecordLength} chars, {txtLineEnding})</span>
+                                                    </div>
+                                                    <pre className="text-green-400 font-mono text-sm overflow-x-auto">{`FIELD1${txtPaddingChar.repeat(4)}FIELD2${txtPaddingChar.repeat(4)}FIELD3${txtPaddingChar.repeat(4)}\nVALUE1${txtPaddingChar.repeat(4)}VALUE2${txtPaddingChar.repeat(4)}VALUE3${txtPaddingChar.repeat(4)}`}</pre>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* File Splitting Options */}
                                         <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
                                             <h4 className="font-medium text-gray-900 mb-4">File Splitting (Optional)</h4>
@@ -966,148 +1181,7 @@ export default function Reports() {
                                             </div>
                                         </div>
 
-                                        {/* CSV Options */}
-                                        {outputFormat === 'csv' && (
-                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
-                                                <h4 className="font-medium text-gray-900 mb-4">CSV Options</h4>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="input-label">Delimiter</label>
-                                                        <select
-                                                            className="select mt-1"
-                                                            value={csvDelimiter}
-                                                            onChange={(e) => setCsvDelimiter(e.target.value)}
-                                                        >
-                                                            <option value=",">Comma (,)</option>
-                                                            <option value=";">Semicolon (;)</option>
-                                                            <option value="\t">Tab</option>
-                                                            <option value="|">Pipe (|)</option>
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="input-label">Quote Character</label>
-                                                        <select
-                                                            className="select mt-1"
-                                                            value={csvQuote}
-                                                            onChange={(e) => setCsvQuote(e.target.value)}
-                                                        >
-                                                            <option value='"'>Double Quote (")</option>
-                                                            <option value="'">Single Quote (')</option>
-                                                            <option value="">None</option>
-                                                        </select>
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <label className="flex items-center gap-2 cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={csvHeader}
-                                                                onChange={(e) => setCsvHeader(e.target.checked)}
-                                                                className="rounded"
-                                                            />
-                                                            <span className="text-sm text-gray-700">Include header row</span>
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
 
-                                        {/* TXT (Fixed-Width) Options */}
-                                        {outputFormat === 'txt' && (
-                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
-                                                <h4 className="font-medium text-gray-900 mb-4">Fixed-Width Text Options</h4>
-                                                <div className="space-y-4">
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div>
-                                                            <label className="input-label">Total Record Length</label>
-                                                            <input
-                                                                type="number"
-                                                                className="input mt-1"
-                                                                placeholder="e.g., 500"
-                                                                defaultValue={500}
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="input-label">Padding Character</label>
-                                                            <select className="select mt-1" defaultValue=" ">
-                                                                <option value=" ">Space</option>
-                                                                <option value="0">Zero (0)</option>
-                                                                <option value="_">Underscore (_)</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <label className="input-label">Line Ending</label>
-                                                        <select className="select mt-1" defaultValue="CRLF">
-                                                            <option value="CRLF">Windows (CRLF)</option>
-                                                            <option value="LF">Unix (LF)</option>
-                                                            <option value="CR">Classic Mac (CR)</option>
-                                                        </select>
-                                                    </div>
-                                                    <div className="bg-white p-3 rounded border border-gray-200">
-                                                        <p className="text-sm text-gray-500">
-                                                            <strong>Note:</strong> Column positions are defined in your Python code using the <code className="text-indigo-600">format_fixed_width()</code> helper function.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* XML Options */}
-                                        {outputFormat === 'xml' && (
-                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
-                                                <h4 className="font-medium text-gray-900 mb-4">XML Options</h4>
-                                                <div className="space-y-4">
-                                                    <div>
-                                                        <label className="input-label">Root Element Name</label>
-                                                        <input
-                                                            type="text"
-                                                            className="input mt-1"
-                                                            placeholder="e.g., Report"
-                                                            defaultValue="Report"
-                                                        />
-                                                    </div>
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input type="checkbox" defaultChecked className="rounded" />
-                                                        <span className="text-sm text-gray-700">Include XML declaration</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input type="checkbox" defaultChecked className="rounded" />
-                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* JSON Options */}
-                                        {outputFormat === 'json' && (
-                                            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
-                                                <h4 className="font-medium text-gray-900 mb-4">JSON Options</h4>
-                                                <div className="space-y-4">
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input type="checkbox" defaultChecked className="rounded" />
-                                                        <span className="text-sm text-gray-700">Pretty print (indented)</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-2 cursor-pointer">
-                                                        <input type="checkbox" className="rounded" />
-                                                        <span className="text-sm text-gray-700">Wrap in array</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Preview */}
-                                        <div className="bg-gray-900 rounded-lg p-4 text-sm">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-gray-400 text-xs uppercase">Output Preview</span>
-                                                <span className="text-gray-500 text-xs">{outputFormat.toUpperCase()}</span>
-                                            </div>
-                                            <pre className="text-green-400 font-mono overflow-x-auto">
-                                                {outputFormat === 'csv' && `${csvHeader ? 'field1,field2,field3\n' : ''}value1${csvDelimiter}value2${csvDelimiter}value3\nvalue4${csvDelimiter}value5${csvDelimiter}value6`}
-                                                {outputFormat === 'xml' && `<?xml version="1.0"?>\n<Report>\n  <Record>\n    <Field1>value1</Field1>\n  </Record>\n</Report>`}
-                                                {outputFormat === 'json' && `[\n  {\n    "field1": "value1",\n    "field2": "value2"\n  }\n]`}
-                                                {outputFormat === 'txt' && `FIELD1    FIELD2    FIELD3    \nVALUE1    VALUE2    VALUE3    `}
-                                            </pre>
-                                        </div>
                                     </div>
                                 </div>
                             )}
