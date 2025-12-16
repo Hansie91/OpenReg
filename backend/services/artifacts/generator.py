@@ -139,7 +139,9 @@ class ArtifactGenerator:
         compress: bool = False,
         field_mappings: Optional[List[Dict[str, Any]]] = None,
         namespace: Optional[str] = None,
-        namespace_prefix: Optional[str] = None
+        namespace_prefix: Optional[str] = None,
+        pretty_print: bool = True,
+        include_declaration: bool = True
     ) -> Dict[str, Any]:
         """
         Generate XML artifact from DataFrame.
@@ -153,6 +155,8 @@ class ArtifactGenerator:
             field_mappings: List of field mappings with targetXPath for hierarchical structure
             namespace: XML namespace URI
             namespace_prefix: Prefix for the namespace
+            pretty_print: Whether to pretty-print (indent) the XML output
+            include_declaration: Whether to include XML declaration
             
         Returns:
             Dict with metadata
@@ -166,7 +170,9 @@ class ArtifactGenerator:
                     data=data,
                     field_mappings=field_mappings,
                     namespace=namespace,
-                    namespace_prefix=namespace_prefix
+                    namespace_prefix=namespace_prefix,
+                    pretty_print=pretty_print,
+                    include_declaration=include_declaration
                 )
                 
                 # Write XML with proper formatting
@@ -203,10 +209,26 @@ class ArtifactGenerator:
                         else:
                             col_elem.text = str(value)
                 
-                # Write XML directly without minidom (simpler, more reliable)
-                tree = ET.ElementTree(root)
-                with open(filepath, 'wb') as f:
-                    tree.write(f, encoding='utf-8', xml_declaration=True)
+                # Convert to string first
+                xml_str = ET.tostring(root, encoding='unicode')
+                
+                # Pretty print if requested
+                if pretty_print:
+                    dom = minidom.parseString(xml_str)
+                    if include_declaration:
+                        xml_output = dom.toprettyxml(indent='  ', encoding=None)
+                    else:
+                        # Remove the XML declaration line
+                        xml_output = '\n'.join(dom.toprettyxml(indent='  ').split('\n')[1:])
+                else:
+                    if include_declaration:
+                        xml_output = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_str
+                    else:
+                        xml_output = xml_str
+                
+                # Write to file
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(xml_output)
             
             # Optionally compress
             if compress:
@@ -232,7 +254,9 @@ class ArtifactGenerator:
         data: pd.DataFrame,
         field_mappings: List[Dict[str, Any]],
         namespace: Optional[str] = None,
-        namespace_prefix: Optional[str] = None
+        namespace_prefix: Optional[str] = None,
+        pretty_print: bool = True,
+        include_declaration: bool = True
     ) -> str:
         """
         Generate hierarchical XML from DataFrame using XPath field mappings.
@@ -242,6 +266,8 @@ class ArtifactGenerator:
             field_mappings: List of mappings with sourceColumn and targetXPath
             namespace: Optional XML namespace
             namespace_prefix: Optional namespace prefix
+            pretty_print: Whether to pretty-print (indent) the XML output
+            include_declaration: Whether to include XML declaration
             
         Returns:
             Formatted XML string
@@ -267,7 +293,11 @@ class ArtifactGenerator:
                 break
         
         # Build XML structure
-        lines = ['<?xml version="1.0" encoding="UTF-8"?>']
+        lines = []
+        newline = '\n' if pretty_print else ''
+        
+        if include_declaration:
+            lines.append('<?xml version="1.0" encoding="UTF-8"?>')
         
         # Add root element with optional namespace
         if namespace and namespace_prefix:
@@ -284,21 +314,23 @@ class ArtifactGenerator:
                 row=row,
                 field_mappings=field_mappings,
                 root_name=root_name,
-                indent_level=1
+                indent_level=1 if pretty_print else 0,
+                pretty_print=pretty_print
             )
             lines.append(row_xml)
         
         # Close root element
         lines.append(f'</{root_name}>')
         
-        return '\n'.join(lines)
+        return newline.join(lines)
     
     @staticmethod
     def _build_row_xml(
         row: pd.Series,
         field_mappings: List[Dict[str, Any]],
         root_name: str,
-        indent_level: int = 1
+        indent_level: int = 1,
+        pretty_print: bool = True
     ) -> str:
         """
         Build XML for a single row based on field mappings.
@@ -308,11 +340,12 @@ class ArtifactGenerator:
             field_mappings: List of field mappings
             root_name: Root element name (to exclude from path)
             indent_level: Current indentation level
+            pretty_print: Whether to pretty-print (indent) the XML output
             
         Returns:
             XML string for this row
         """
-        indent = '    ' * indent_level
+        indent = '    ' * indent_level if pretty_print else ''
         
         # Build a tree structure from mappings
         # Key = tuple of path elements, Value = value
@@ -360,16 +393,17 @@ class ArtifactGenerator:
                 path_values[tuple(path_parts)] = value
         
         # Build XML from path structure
-        return ArtifactGenerator._paths_to_xml(path_values, indent_level)
+        return ArtifactGenerator._paths_to_xml(path_values, indent_level, pretty_print)
     
     @staticmethod
-    def _paths_to_xml(path_values: Dict[tuple, str], indent_level: int = 1) -> str:
+    def _paths_to_xml(path_values: Dict[tuple, str], indent_level: int = 1, pretty_print: bool = True) -> str:
         """
         Convert path-value pairs to XML string.
         
         Args:
             path_values: Dict mapping path tuples to values
             indent_level: Current indentation level
+            pretty_print: Whether to pretty-print (indent) the XML output
             
         Returns:
             XML string
@@ -387,7 +421,8 @@ class ArtifactGenerator:
             return ''
         
         lines = []
-        indent = '    ' * indent_level
+        indent = '    ' * indent_level if pretty_print else ''
+        newline = '\n' if pretty_print else ''
         
         # Group paths by their first element
         grouped = defaultdict(dict)
@@ -422,10 +457,11 @@ class ArtifactGenerator:
                     value = sub_paths.pop(tuple())
                     # Element has both value and children - put value as text
                     if value:
-                        lines.append(f'{indent}    {ArtifactGenerator._escape_xml(value)}')
+                        child_indent = '    ' * (indent_level + 1) if pretty_print else ''
+                        lines.append(f'{child_indent}{ArtifactGenerator._escape_xml(value)}')
                 
                 # Recursively build children
-                child_xml = ArtifactGenerator._paths_to_xml(sub_paths, indent_level + 1)
+                child_xml = ArtifactGenerator._paths_to_xml(sub_paths, indent_level + 1, pretty_print)
                 if child_xml:
                     lines.append(child_xml)
                 
@@ -434,7 +470,7 @@ class ArtifactGenerator:
                 # Empty element
                 lines.append(f'{indent}<{element}/>')
         
-        return '\n'.join(lines)
+        return newline.join(lines)
     
     @staticmethod
     def _escape_xml(value: str) -> str:

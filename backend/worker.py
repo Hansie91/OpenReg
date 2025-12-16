@@ -384,12 +384,22 @@ def execute_report_task(job_run_id: str):
                             namespace = report_version.config.get('namespace')
                             namespace_prefix = report_version.config.get('namespace_prefix')
                             
+                            # Get XML formatting options from output_config
+                            output_config = report_version.config.get('output_config', {})
+                            xml_options = output_config.get('xml', {})
+                            pretty_print = xml_options.get('pretty_print', True)
+                            include_declaration = xml_options.get('include_declaration', True)
+                            root_name = xml_options.get('root_element', 'data')
+                            
                             metadata = ArtifactGenerator.generate_xml(
                                 data=final_output,
                                 filepath=filepath,
+                                root_name=root_name,
                                 field_mappings=field_mappings,
                                 namespace=namespace,
-                                namespace_prefix=namespace_prefix
+                                namespace_prefix=namespace_prefix,
+                                pretty_print=pretty_print,
+                                include_declaration=include_declaration
                             )
                         elif output_format == 'txt':
                             # Tab-delimited text file

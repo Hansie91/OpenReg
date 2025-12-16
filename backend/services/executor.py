@@ -233,6 +233,7 @@ class CodeExecutor:
         from datetime import datetime, timedelta, date
         from decimal import Decimal
         import xml.etree.ElementTree as ET
+        from xml.dom import minidom
         from collections import OrderedDict, defaultdict
         
         sandbox.update({
@@ -251,6 +252,7 @@ class CodeExecutor:
             'Decimal': Decimal,
             'ET': ET,
             'ElementTree': ET,
+            'minidom': minidom,
             'OrderedDict': OrderedDict,
             'defaultdict': defaultdict,
         })

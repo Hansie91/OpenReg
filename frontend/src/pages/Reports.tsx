@@ -371,11 +371,27 @@ export default function Reports() {
                 config: {
                     output_format: outputFormat,
                     max_records_per_file: maxRecords,
-                    csv_options: outputFormat === 'csv' ? {
-                        delimiter: csvDelimiter,
-                        quote_char: csvQuote,
-                        include_header: csvHeader
-                    } : undefined
+                    output_config: {
+                        csv: {
+                            delimiter: csvDelimiter,
+                            quote_char: csvQuote,
+                            include_header: csvHeader
+                        },
+                        xml: {
+                            root_element: xmlRootElement,
+                            include_declaration: xmlIncludeDeclaration,
+                            pretty_print: xmlPrettyPrint
+                        },
+                        json: {
+                            pretty_print: jsonPrettyPrint,
+                            wrap_in_array: jsonWrapInArray
+                        },
+                        txt: {
+                            record_length: txtRecordLength,
+                            padding_char: txtPaddingChar,
+                            line_ending: txtLineEnding
+                        }
+                    }
                 }
             },
         });
