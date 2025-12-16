@@ -74,6 +74,16 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
         </svg>
     ),
+    Sun: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+        </svg>
+    ),
+    Moon: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+        </svg>
+    ),
 };
 
 const DEFAULT_CODE = `"""
@@ -115,6 +125,10 @@ export default function Reports() {
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
     const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config' | 'delivery' | 'streaming'>('code');
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(() => {
+        const saved = localStorage.getItem('editor-dark-mode');
+        return saved ? JSON.parse(saved) : false;
+    });
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [bumpMajor, setBumpMajor] = useState(false);
     const [currentVersion, setCurrentVersion] = useState<ReportVersion | null>(null);
@@ -570,6 +584,17 @@ export default function Reports() {
                             </div>
                             <div className="flex items-center gap-2">
                                 <button
+                                    onClick={() => {
+                                        const newMode = !isDarkMode;
+                                        setIsDarkMode(newMode);
+                                        localStorage.setItem('editor-dark-mode', JSON.stringify(newMode));
+                                    }}
+                                    className="btn btn-ghost btn-icon"
+                                    title={isDarkMode ? 'Light Mode' : 'Dark Mode'}
+                                >
+                                    {isDarkMode ? <Icons.Sun /> : <Icons.Moon />}
+                                </button>
+                                <button
                                     onClick={() => setIsFullscreen(!isFullscreen)}
                                     className="btn btn-ghost btn-icon"
                                     title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
@@ -650,7 +675,7 @@ export default function Reports() {
                                                 setPythonCode(value || '');
                                                 setHasUnsavedChanges(true);
                                             }}
-                                            theme="vs-light"
+                                            theme={isDarkMode ? 'vs-dark' : 'vs-light'}
                                             options={{
                                                 minimap: { enabled: true },
                                                 fontSize: 14,

@@ -200,6 +200,9 @@ export const adminAPI = {
     getAuditLogs: (params?: any) => api.get('/admin/audit', { params }),
     getAuditStats: () => api.get('/admin/audit/stats'),
     getSystemHealth: () => api.get('/admin/health'),
+    // Settings
+    getSettings: () => api.get('/admin/settings'),
+    updateSettings: (data: { session_timeout_minutes?: number }) => api.put('/admin/settings', data),
 };
 
 // Schemas API (XSD Management)

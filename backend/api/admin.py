@@ -855,3 +855,78 @@ async def get_system_health(
     
     return health
 
+
+# === Tenant Settings ===
+
+class TenantSettingsUpdate(BaseModel):
+    session_timeout_minutes: Optional[int] = None  # Inactivity timeout in minutes
+
+
+class TenantSettingsResponse(BaseModel):
+    session_timeout_minutes: int
+
+
+@router.get("/settings", response_model=TenantSettingsResponse)
+async def get_tenant_settings(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get tenant settings including session timeout. Available to all authenticated users."""
+    tenant = db.query(models.Tenant).filter(
+        models.Tenant.id == current_user.tenant_id
+    ).first()
+    
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    
+    # Get settings from tenant's settings JSONB field, with defaults
+    settings = tenant.settings or {}
+    
+    return TenantSettingsResponse(
+        session_timeout_minutes=settings.get("session_timeout_minutes", 30)  # Default 30 minutes
+    )
+
+
+@router.put("/settings", response_model=TenantSettingsResponse)
+async def update_tenant_settings(
+    settings_data: TenantSettingsUpdate,
+    current_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Update tenant settings. Admin only."""
+    tenant = db.query(models.Tenant).filter(
+        models.Tenant.id == current_user.tenant_id
+    ).first()
+    
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    
+    # Update settings
+    current_settings = tenant.settings or {}
+    
+    if settings_data.session_timeout_minutes is not None:
+        if settings_data.session_timeout_minutes < 5:
+            raise HTTPException(status_code=400, detail="Session timeout must be at least 5 minutes")
+        if settings_data.session_timeout_minutes > 480:
+            raise HTTPException(status_code=400, detail="Session timeout cannot exceed 8 hours (480 minutes)")
+        current_settings["session_timeout_minutes"] = settings_data.session_timeout_minutes
+    
+    tenant.settings = current_settings
+    db.commit()
+    db.refresh(tenant)
+    
+    # Audit log
+    log_audit(
+        db=db,
+        user=current_user,
+        action=models.AuditAction.UPDATE,
+        entity_type="settings",
+        entity_id=str(tenant.id),
+        changes={"session_timeout_minutes": current_settings.get("session_timeout_minutes")}
+    )
+    
+    return TenantSettingsResponse(
+        session_timeout_minutes=current_settings.get("session_timeout_minutes", 30)
+    )
+
+
