@@ -123,7 +123,7 @@ export default function Reports() {
     const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
-    const [editorTab, setEditorTab] = useState<'code' | 'history' | 'config' | 'delivery' | 'streaming'>('code');
+    const [editorTab, setEditorTab] = useState<'info' | 'code' | 'history' | 'config' | 'delivery' | 'streaming'>('info');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('editor-dark-mode');
@@ -133,9 +133,14 @@ export default function Reports() {
     const [bumpMajor, setBumpMajor] = useState(false);
     const [currentVersion, setCurrentVersion] = useState<ReportVersion | null>(null);
 
-    // Form state
+
+    // Form state (for create modal)
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
+    // Edit state (for edit modal - separate from create)
+    const [editName, setEditName] = useState('');
+    const [editDescription, setEditDescription] = useState('');
+    const [hasBasicInfoChanges, setHasBasicInfoChanges] = useState(false);
     const [pythonCode, setPythonCode] = useState(DEFAULT_CODE);
     const [connectorId, setConnectorId] = useState('');
     const [executing, setExecuting] = useState(false);
@@ -312,7 +317,12 @@ export default function Reports() {
         setSelectedReport(report);
         setShowEditModal(true);
         setHasUnsavedChanges(false);
+        setHasBasicInfoChanges(false);
         setBumpMajor(false);
+        setEditorTab('info');
+        // Load basic info for editing
+        setEditName(report.name);
+        setEditDescription(report.description || '');
 
         // Load saved code from version if available
         if (report.current_version_id) {
@@ -397,6 +407,23 @@ export default function Reports() {
         });
         setHasUnsavedChanges(false);
         setBumpMajor(false);
+    };
+
+    const handleSaveBasicInfo = () => {
+        if (!selectedReport) return;
+        updateMutation.mutate({
+            id: selectedReport.id,
+            data: {
+                name: editName,
+                description: editDescription
+            }
+        }, {
+            onSuccess: () => {
+                setHasBasicInfoChanges(false);
+                // Update the local selectedReport to reflect changes
+                setSelectedReport({ ...selectedReport, name: editName, description: editDescription });
+            }
+        });
     };
 
     const handleExecute = async () => {
@@ -640,6 +667,15 @@ export default function Reports() {
                         {/* Tabs */}
                         <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b border-gray-200">
                             <button
+                                onClick={() => setEditorTab('info')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'info'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Basic Info
+                            </button>
+                            <button
                                 onClick={() => setEditorTab('code')}
                                 className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'code'
                                     ? 'text-indigo-600 border-b-2 border-indigo-600'
@@ -693,6 +729,83 @@ export default function Reports() {
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
+                            {/* Basic Info Tab */}
+                            {editorTab === 'info' && (
+                                <div className="flex-1 p-6 overflow-y-auto">
+                                    <div className="max-w-2xl">
+                                        <h4 className="text-lg font-semibold text-gray-900 mb-6">Report Information</h4>
+
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="input-label">Report Name *</label>
+                                                <input
+                                                    type="text"
+                                                    className="input"
+                                                    placeholder="Enter report name"
+                                                    value={editName}
+                                                    onChange={(e) => {
+                                                        setEditName(e.target.value);
+                                                        setHasBasicInfoChanges(true);
+                                                    }}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="input-label">Description</label>
+                                                <textarea
+                                                    className="input"
+                                                    rows={4}
+                                                    placeholder="Enter report description"
+                                                    value={editDescription}
+                                                    onChange={(e) => {
+                                                        setEditDescription(e.target.value);
+                                                        setHasBasicInfoChanges(true);
+                                                    }}
+                                                />
+                                            </div>
+
+                                            {/* Data Source */}
+                                            <div>
+                                                <label className="input-label">Data Source</label>
+                                                <select
+                                                    className="input"
+                                                    value={connectorId}
+                                                    onChange={(e) => {
+                                                        setConnectorId(e.target.value);
+                                                        setHasUnsavedChanges(true);
+                                                    }}
+                                                >
+                                                    <option value="">Select a connector...</option>
+                                                    {connectors?.map((c: any) => (
+                                                        <option key={c.id} value={c.id}>
+                                                            {c.name} ({c.type})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    The database connector used for data queries. Changes will be saved with the next code version.
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-4 border-t border-gray-200">
+                                                <button
+                                                    onClick={handleSaveBasicInfo}
+                                                    disabled={!editName || !hasBasicInfoChanges || updateMutation.isLoading}
+                                                    className="btn btn-primary"
+                                                >
+                                                    {updateMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                                                </button>
+                                                {hasBasicInfoChanges && (
+                                                    <span className="ml-4 text-sm text-amber-600">
+                                                        You have unsaved changes
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Code Editor Tab */}
                             {editorTab === 'code' && (
                                 <>
