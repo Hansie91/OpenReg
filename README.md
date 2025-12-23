@@ -1,279 +1,258 @@
-# OpenRegReport Portal
+<p align="center">
+  <img src="docs/assets/logo-banner.svg" alt="OpenReg" width="600">
+</p>
 
-**Open-source, browser-accessible regulatory reporting platform**
+<h1 align="center">OpenReg</h1>
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub](https://img.shields.io/badge/GitHub-Hansie91%2FOpenReg-blue)](https://github.com/Hansie91/OpenReg)
+<p align="center">
+  <strong>Enterprise-Grade Regulatory Reporting Platform</strong>
+</p>
 
-OpenRegReport Portal is a self-hosted web application that allows organizations to configure and run regulatory report generation workflows end-to-end—without code changes for most configuration. Built with production-readiness and extensibility in mind.
+<p align="center">
+  <em>Automate, validate, and deliver regulatory reports with confidence</em>
+</p>
 
-## ✨ Features
+<p align="center">
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/Hansie91/OpenReg"><img src="https://img.shields.io/badge/GitHub-OpenReg-181717?logo=github" alt="GitHub"></a>
+  <a href="https://github.com/Hansie91/OpenReg/releases"><img src="https://img.shields.io/github/v/release/Hansie91/OpenReg?include_prereleases&label=Release" alt="Release"></a>
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React 18">
+  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 15">
+</p>
 
-### Core Platform
-- 🔐 **Browser Portal UI**: Full-featured web interface for all operations
-- 📅 **Scheduling & Triggers**: Cron schedules, event triggers, manual execution
-- 🐍 **Python Report Logic**: Sandboxed Python code editor with syntax highlighting
-- 🗄️ **Universal DB Connectivity**: PostgreSQL, SQL Server, Oracle, MySQL, ODBC
-- 🔄 **Cross-Reference Mappings**: Manage code translations with audit trails
-- ✅ **Validation Engine**: Rule engine with blocking/warning validations and exception queue
-- 📤 **SFTP/FTP Delivery**: Automated delivery to regulators
-- 🔒 **Security First**: RBAC, credential encryption, full audit logging
+<p align="center">
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-key-features">Features</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-documentation">Documentation</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
 
-### Report Editor
-- 📝 **Monaco Code Editor**: Full-featured Python editor with IntelliSense
-- 🔢 **Semantic Versioning**: Major/minor versioning with version history
-- ⚡ **Live Execution**: Execute reports directly from the editor
-- 📊 **Output Config**: Configurable output formats and file naming
+---
 
-### Output Configuration
-- 📄 **Multiple Formats**: XML, JSON, CSV, TXT (fixed-width)
-- 📁 **File Splitting**: By record count or file size (MB)
-- 🏷️ **Filename Generator**: Configurable templates with tokens:
-  - Report name, business date, version number
-  - Sequence numbers, timestamps
-  - Custom prefix/suffix
-  - Multiple date formats (YYYYMMDD, YYYY-MM-DD, etc.)
-- ⚙️ **Format-Specific Options**:
-  - CSV: Delimiter, quote character, header row
-  - XML: Root element, declaration, pretty print
-  - JSON: Pretty print, array wrapping
-  - TXT: Record length, padding, line endings
+## Overview
 
-### Administration
-- 👥 **User Management**: Create/edit users, assign roles
-- 🏢 **Multi-Tenant Ready**: PostgreSQL RLS for tenant isolation
-- 📋 **Exception Queue**: Review and correct validation failures
-- 📈 **Dashboard**: Execution statistics and daily summaries
+**OpenReg** is a self-hosted, open-source regulatory reporting platform designed for financial institutions, trading firms, and compliance teams. It provides end-to-end automation for generating, validating, and delivering regulatory reports across multiple jurisdictions.
 
-## 🌍 Regulatory Regimes Roadmap
+Built for production environments, OpenReg offers a modern web interface, robust security controls, and the flexibility to handle complex reporting requirements—from simple data transformations to sophisticated multi-source aggregations.
 
-The following regulatory reporting regimes are in development for the portal:
+### Why OpenReg?
 
-### United States
-| Regime | Regulator | Status |
-|--------|-----------|--------|
-| **CFTC** | Commodity Futures Trading Commission (CFTC Rewrite) | 🔄 Planned |
-| **SEC** | Securities and Exchange Commission | 🔄 Planned |
+| Challenge | OpenReg Solution |
+|-----------|------------------|
+| Manual report generation is error-prone | Automated, repeatable workflows with version control |
+| Regulatory changes require code deployments | No-code configuration for most changes |
+| Multiple data sources and formats | Universal database connectivity with flexible output formats |
+| Compliance audit requirements | Full audit trail with user attribution and version history |
+| Complex validation requirements | Rule engine with blocking/warning validations and exception management |
+| Delivery to regulators | Automated SFTP/FTP delivery with acknowledgment tracking |
 
-### European Union
-| Regime | Description | Status |
-|--------|-------------|--------|
-| **EU EMIR** | European Market Infrastructure Regulation (EMIR Refit) | 🔄 In Development |
-| **EU MiFIR** | Markets in Financial Instruments Regulation | ✅ Active |
-
-### United Kingdom
-| Regime | Description | Status |
-|--------|-------------|--------|
-| **UK EMIR** | UK European Market Infrastructure Regulation (UK EMIR Refit) | 🔄 Planned |
-| **UK MiFIR** | UK Markets in Financial Instruments Regulation | 🔄 In Development |
-
-### Asia-Pacific
-| Regime | Regulator | Status |
-|--------|-----------|--------|
-| **Japan** | Financial Services Agency (JFSA) | 🔄 Planned |
-| **Australia** | Australian Securities and Investments Commission (ASIC) | 🔄 Planned |
-| **Singapore** | Monetary Authority of Singapore (MAS) | 🔄 Planned |
-| **Hong Kong** | Hong Kong Monetary Authority (HKMA) | 🔄 Planned |
-
-### Other Jurisdictions
-| Regime | Regulator | Status |
-|--------|-----------|--------|
-| **Canada** | Canadian Securities Administrators (CSA) | 🔄 Planned |
-| **Switzerland** | Swiss Financial Market Supervisory Authority (FINMA/FinfraG) | 🔄 Planned |
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Docker 20.10+ and Docker Compose 2.0+
-- 4GB RAM minimum (8GB recommended)
-- Ports 3000, 8000, 5432, 6379, 9000 available
+- 4GB RAM minimum (8GB recommended for production)
+- Available ports: 3000, 8000, 5432, 6379, 9000
 
 ### Installation
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Hansie91/OpenReg.git
-   cd OpenReg
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/Hansie91/OpenReg.git
+cd OpenReg
 
-2. **Copy environment template**:
-   ```bash
-   cp .env.example .env
-   ```
+# Configure environment (optional - defaults work for development)
+cp .env.example .env
 
-3. **Start all services**:
-   ```bash
-   docker-compose up -d
-   ```
+# Start all services
+docker-compose up -d
 
-4. **Initialize database** (first time only):
-   ```bash
-   docker-compose exec backend python init_db.py
-   ```
-
-5. **Access the portal**:
-   - Frontend: http://localhost:3000
-   - API Docs: http://localhost:8000/docs
-   - MinIO Console: http://localhost:9001
-
-### Default Credentials
-
-**Portal Login:**
-- Email: `admin@example.com`
-- Password: `admin123`
-
-**MinIO Console:**
-- Username: `minioadmin`
-- Password: `minioadmin`
-
-> ⚠️ **IMPORTANT**: Change all default passwords before production deployment!
-
-## 📖 Usage
-
-### Creating Your First Report
-
-1. **Add a Database Connector**
-   - Navigate to **Connectors** → **Add Connector**
-   - Enter connection details for your database
-   - Test the connection
-
-2. **Create a Report**
-   - Go to **Reports** → **Create Report**
-   - Name your report (e.g., "MiFIR Transaction Report")
-   - Add a description
-
-3. **Configure Report Settings**
-   - Click **Edit** on your report
-   - **Code Tab**: Write Python transformation code
-   - **Output Config Tab**: Select format (XML/JSON/CSV/TXT) and configure naming
-   - **History Tab**: View version history and execution statistics
-
-4. **Execute the Report**
-   - Click **Execute** to run manually
-   - Select business date range
-   - View results in the execution modal
-   - Download generated artifacts
-
-5. **Schedule Regular Execution**
-   - Go to **Schedules**
-   - Create cron or calendar-based schedule
-   - Link to your report
-
-### Python Code Structure
-
-```python
-# Query transactions using injected query_db function
-query = """
-    SELECT * FROM mifir_transactions
-    WHERE business_date BETWEEN %s AND %s
-    ORDER BY trading_date_time
-"""
-
-df = query_db(query, [parameters['business_date_from'], parameters['business_date_to']])
-log(f"Retrieved {len(df)} transactions")
-
-# Transform data as needed
-# ...
-
-# Assign to 'result' - this is what gets output
-result = df.to_dict('records')
+# Initialize the database (first run only)
+docker-compose exec backend python init_db.py
 ```
 
-**Available Functions:**
-- `query_db(sql, params)` - Execute SQL query, returns DataFrame
-- `log(message)` - Log messages during execution
-- `get_mapping(name, value)` - Cross-reference lookup
-- `parameters` - Dict with business_date_from, business_date_to, etc.
+### Access the Platform
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Web Portal** | http://localhost:3000 | Main application interface |
+| **API Documentation** | http://localhost:8000/docs | Interactive OpenAPI docs |
+| **Storage Console** | http://localhost:9001 | MinIO object storage UI |
+
+**Default Credentials:**
+- Portal: `admin@example.com` / `admin123`
+- MinIO: `minioadmin` / `minioadmin`
+
+> ⚠️ **Security Notice:** Change all default credentials before deploying to production. See the [Security Guide](docs/SECURITY.md) for hardening recommendations.
+
+---
+
+## ✨ Key Features
+
+### Report Management
+
+<table>
+<tr>
+<td width="50%">
+
+**Declarative Configuration**
+- Visual field mapping between source data and output schema
+- XSD schema upload with automatic element parsing
+- Support for XML, JSON, CSV, and fixed-width formats
+- Configurable file naming with dynamic tokens
+
+</td>
+<td width="50%">
+
+**Advanced Transformations**
+- Python code editor with syntax highlighting
+- Sandboxed execution with whitelisted libraries
+- DataFrame-based data manipulation
+- Cross-reference mapping lookups
+
+</td>
+</tr>
+</table>
+
+### Execution & Scheduling
+
+- **Manual Execution** — Run reports on-demand with custom date ranges
+- **Cron Scheduling** — Standard cron expressions for precise timing
+- **Calendar Integration** — Business day awareness with holiday support
+- **Event Triggers** — Execute based on external events or data changes
+
+### Validation Engine
+
+- **Pre-generation validation** — Validate source data before processing
+- **Post-generation validation** — Verify output compliance
+- **Exception queue** — Review, correct, and resubmit failed records
+- **Validation severity levels** — Blocking, warning, and correctable rules
+
+### Data Connectivity
+
+| Database | Status | Notes |
+|----------|--------|-------|
+| PostgreSQL | ✅ Supported | Primary external database support |
+| SQL Server | ✅ Supported | Windows Authentication and SQL Auth |
+| Oracle | ✅ Supported | TNS and Easy Connect |
+| MySQL | ✅ Supported | SSL/TLS connections |
+| ODBC | ✅ Supported | Generic ODBC driver support |
+
+### Security & Compliance
+
+- **Role-Based Access Control** — Granular permissions for users and teams
+- **Credential Encryption** — AES-256 encryption for all stored secrets
+- **Audit Logging** — Comprehensive trail of all actions and changes
+- **JWT Authentication** — Secure, stateless authentication
+- **Multi-Tenant Architecture** — PostgreSQL Row-Level Security for data isolation
+
+---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐
-│   Browser   │
-│   (React)   │
-└──────┬──────┘
-       │ HTTPS
-┌──────▼──────┐
-│   FastAPI   │──┐
-│   Backend   │  │
-└──────┬──────┘  │
-       │         │ Job Queue
-┌──────▼──────┐  │ (Redis)
-│  PostgreSQL │  │
-│  (Metadata) │  │
-└─────────────┘  │
-       │         │
-┌──────▼──────┐  │
-│   Celery    │◄─┘
-│   Workers   │ Execute Reports
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│    MinIO    │ Artifact Storage
-│    (S3)     │
-└─────────────┘
-       │
-┌──────▼──────┐
-│  SFTP/FTP   │ Delivery
-│ Destinations│
-└─────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                         CLIENT LAYER                              │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    React Web Application                     │  │
+│  │              (TypeScript, Vite, TailwindCSS)                │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────┘
+                                │
+                                │ HTTPS / REST API
+                                ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                         API LAYER                                 │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    FastAPI Backend                          │  │
+│  │         (Python 3.11, SQLAlchemy, Pydantic)                │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────┘
+         │                      │                      │
+         ▼                      ▼                      ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   PostgreSQL    │   │      Redis      │   │      MinIO      │
+│   (Metadata)    │   │   (Job Queue)   │   │   (Artifacts)   │
+│                 │   │                 │   │                 │
+│  • Reports      │   │  • Task Queue   │   │  • Report Files │
+│  • Versions     │   │  • Scheduling   │   │  • Audit Logs   │
+│  • Audit Logs   │   │  • Caching      │   │  • Backups      │
+└─────────────────┘   └────────┬────────┘   └─────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                      WORKER LAYER                                 │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                   Celery Workers                            │  │
+│  │        (Report Execution, Delivery, Scheduling)            │  │
+│  │                                                             │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │  │
+│  │  │  Executor   │  │  Validator  │  │  Delivery   │         │  │
+│  │  │  (Python)   │  │  (Rules)    │  │  (SFTP/FTP) │         │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘         │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-## 🛠️ Tech Stack
+### Technology Stack
 
-- **Backend**: FastAPI (Python 3.11+)
-- **Frontend**: React 18 + TypeScript + Vite
-- **Database**: PostgreSQL 15
-- **Job Queue**: Celery + Redis
-- **Storage**: MinIO (S3-compatible)
-- **Code Execution**: RestrictedPython (sandboxed)
-- **Orchestration**: Docker Compose
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **Frontend** | React 18, TypeScript, Vite | Modern SPA with type safety |
+| **Backend** | FastAPI, Python 3.11+ | High-performance async API |
+| **Database** | PostgreSQL 15 | Metadata, configuration, audit logs |
+| **Queue** | Celery + Redis | Distributed task execution |
+| **Storage** | MinIO (S3-compatible) | Report artifacts and files |
+| **Execution** | RestrictedPython | Secure sandboxed code execution |
 
-## 📚 Documentation
+---
 
-- **[Architecture Guide](docs/ARCHITECTURE.md)**: Deep dive into system design
-- **[Security Model](docs/SECURITY.md)**: Security hardening checklist
-- **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment (K8s/Helm)
-- **[Roadmap](docs/ROADMAP.md)**: MVP → v1 → v2 features
-- **[API Documentation](http://localhost:8000/docs)**: Interactive OpenAPI docs
+## 🌍 Supported Regulatory Regimes
 
-## 🗺️ Feature Roadmap
+OpenReg supports multiple regulatory reporting frameworks with active development for additional jurisdictions.
 
-### ✅ MVP (Completed)
-- ✅ Portal UI (Dashboard, Reports, Connectors, Runs)
-- ✅ Authentication & RBAC
-- ✅ Report CRUD + semantic versioning
-- ✅ Database connector management
-- ✅ Full report execution pipeline
-- ✅ Output format configuration (XML/JSON/CSV/TXT)
-- ✅ Configurable filename templates
-- ✅ File splitting by records/size
-- ✅ Validation engine with exception queue
-- ✅ Docker Compose deployment
+### Currently Supported
 
-### 🔄 v1 (In Progress)
-- [x] Monaco code editor
-- [x] Cross-reference mappings
-- [ ] Schedule management (cron + calendar)
-- [ ] SFTP/FTP delivery
-- [ ] Log streaming
-- [ ] Kubernetes/Helm charts
+| Regime | Jurisdiction | Description |
+|--------|--------------|-------------|
+| **MiFIR/MiFID II** | European Union | Transaction reporting under RTS 25 |
+| **UK MiFIR** | United Kingdom | Post-Brexit UK transaction reporting |
 
-### 📋 v2 (Planned)
-- [ ] Multi-tenant isolation (PostgreSQL RLS)
-- [ ] Approval workflows
-- [ ] Data lineage tracking
-- [ ] Advanced RBAC (field-level permissions)
-- [ ] External auth (OIDC/SAML)
-- [ ] Observability (metrics, traces)
-- [ ] Plugin marketplace
-- [ ] XBRL taxonomy management
+### In Development
 
-## 🧪 Development
+| Regime | Jurisdiction | Status |
+|--------|--------------|--------|
+| **EMIR Refit** | European Union | 🔄 In Development |
+| **UK EMIR** | United Kingdom | 🔄 In Development |
+| **CFTC Rewrite** | United States | 📋 Planned |
+| **SEC Reporting** | United States | 📋 Planned |
+| **ASIC** | Australia | 📋 Planned |
+| **MAS** | Singapore | 📋 Planned |
+| **JFSA** | Japan | 📋 Planned |
 
-### Backend Development
+---
 
+## 📖 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture Guide](docs/ARCHITECTURE.md) | System design and component interaction |
+| [Security Model](docs/SECURITY.md) | Security controls and hardening guide |
+| [Deployment Guide](docs/DEPLOYMENT.md) | Production deployment with Kubernetes |
+| [API Reference](http://localhost:8000/docs) | Interactive OpenAPI documentation |
+| [User Guide](docs/USER_GUIDE.md) | End-user documentation |
+
+---
+
+## 🛠️ Development
+
+### Local Development Setup
+
+**Backend:**
 ```bash
 cd backend
 python -m venv venv
@@ -282,8 +261,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-### Frontend Development
-
+**Frontend:**
 ```bash
 cd frontend
 npm install
@@ -293,63 +271,122 @@ npm run dev
 ### Running Tests
 
 ```bash
-# Backend
-cd backend
-pytest
+# Backend tests
+cd backend && pytest --cov=. --cov-report=html
 
-# Frontend
-cd frontend
-npm test
+# Frontend tests
+cd frontend && npm test
 ```
 
-## 🤝 Contributing
+### Code Quality
 
-Contributions are welcome! Please read our contributing guidelines first.
+```bash
+# Backend linting
+cd backend && ruff check . && mypy .
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
-
-### Why Apache 2.0?
-
-- ✅ Permissive (allows commercial use, modification, distribution)
-- ✅ Explicit patent grant (protects users from patent claims)
-- ✅ Enterprise-friendly (widely accepted by corporate legal teams)
-- ✅ Compatible with most open-source licenses
-
-## 🔒 Security
-
-- **Credential Encryption**: Fernet symmetric encryption for DB/SFTP credentials
-- **JWT Authentication**: Short-lived access tokens (15min) + refresh tokens (7 days)
-- **RBAC**: Role-based access control at API level
-- **Audit Logging**: All configuration changes and executions logged
-- **Sandboxed Execution**: RestrictedPython with allowlisted libraries only
-- **SQL Injection Protection**: Parameterized queries via SQLAlchemy
-
-For production hardening, see [docs/SECURITY.md](docs/SECURITY.md).
-
-## 💡 Support
-
-- **Documentation**: See `docs/` directory
-- **Issues**: [GitHub Issues](https://github.com/Hansie91/OpenReg/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Hansie91/OpenReg/discussions)
-
-## 🙏 Acknowledgments
-
-Built with:
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
-- [React](https://react.dev/) - UI library
-- [Celery](https://docs.celeryproject.org/) - Distributed task queue
-- [MinIO](https://min.io/) - S3-compatible object storage
-- [PostgreSQL](https://www.postgresql.org/) - Relational database
-- [RestrictedPython](https://restrictedpython.readthedocs.io/) - Sandboxed execution
+# Frontend linting
+cd frontend && npm run lint
+```
 
 ---
 
-**Made with ❤️ for the regulatory reporting community**
+## 📋 Roadmap
+
+### ✅ v0.1 — Foundation (Completed)
+- Web portal with authentication and RBAC
+- Report management with semantic versioning
+- Database connector configuration
+- Report execution pipeline
+- Multi-format output (XML, JSON, CSV, TXT)
+- Validation engine with exception queue
+
+### 🔄 v0.2 — Automation (In Progress)
+- Schedule management (cron + calendar)
+- SFTP/FTP delivery automation
+- Real-time execution logging
+- Enhanced monitoring dashboard
+
+### 📋 v1.0 — Enterprise (Planned)
+- Multi-tenant data isolation (PostgreSQL RLS)
+- Approval workflows for report changes
+- External authentication (OIDC/SAML)
+- Kubernetes/Helm deployment
+- Observability (Prometheus, OpenTelemetry)
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from the community! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a pull request.
+
+### How to Contribute
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/improvement`)
+3. **Commit** your changes with clear messages
+4. **Test** thoroughly before submitting
+5. **Open** a Pull Request with a detailed description
+
+### Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold this code.
+
+---
+
+## 📄 License
+
+OpenReg is licensed under the **Apache License 2.0**.
+
+This license was chosen because it:
+- ✅ Permits commercial use, modification, and distribution
+- ✅ Includes explicit patent grant protection
+- ✅ Is widely accepted by enterprise legal teams
+- ✅ Is compatible with most open-source licenses
+
+See [LICENSE](LICENSE) for the full license text.
+
+---
+
+## 🔒 Security
+
+Security is a top priority for OpenReg. Key security features include:
+
+- **Encryption at Rest** — AES-256 encryption for credentials and sensitive data
+- **Encryption in Transit** — TLS 1.3 for all network communication
+- **Authentication** — JWT-based with configurable session timeouts
+- **Authorization** — Role-based access control with granular permissions
+- **Audit Trail** — Immutable logging of all user actions
+- **Code Sandboxing** — RestrictedPython with allowlisted libraries only
+
+### Reporting Vulnerabilities
+
+If you discover a security vulnerability, please report it responsibly by emailing [security@openreg.io](mailto:security@openreg.io). Do not open a public issue.
+
+---
+
+## 💬 Community & Support
+
+- **GitHub Issues** — [Report bugs and request features](https://github.com/Hansie91/OpenReg/issues)
+- **GitHub Discussions** — [Ask questions and share ideas](https://github.com/Hansie91/OpenReg/discussions)
+- **Documentation** — [Comprehensive guides in `/docs`](docs/)
+
+---
+
+## 🙏 Acknowledgments
+
+OpenReg is built on the shoulders of these excellent open-source projects:
+
+- [FastAPI](https://fastapi.tiangolo.com/) — Modern Python web framework
+- [React](https://react.dev/) — User interface library
+- [PostgreSQL](https://www.postgresql.org/) — Relational database
+- [Celery](https://docs.celeryproject.org/) — Distributed task queue
+- [MinIO](https://min.io/) — S3-compatible object storage
+- [RestrictedPython](https://restrictedpython.readthedocs.io/) — Secure code execution
+
+---
+
+<p align="center">
+  <strong>Built for the regulatory reporting community</strong>
+  <br>
+  <sub>© 2024 OpenReg Contributors. Licensed under Apache 2.0.</sub>
+</p>
