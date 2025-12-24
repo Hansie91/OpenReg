@@ -67,6 +67,11 @@ class PostgreSQLConnector(DatabaseConnector):
             self._connection = psycopg2.connect(**params)
             self._connection.set_session(autocommit=True)  # Auto-commit for SELECT queries
             
+            # Set work_mem to handle large result sets
+            cursor = self._connection.cursor()
+            cursor.execute("SET work_mem = '256MB'")
+            cursor.close()
+            
             logger.info("PostgreSQL connection established")
             
         except psycopg2.OperationalError as e:
@@ -129,15 +134,19 @@ class PostgreSQLConnector(DatabaseConnector):
         self,
         query: str,
         params: Optional[Tuple] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        batch_size: int = 10000
     ) -> List[Dict[str, Any]]:
         """
         Execute PostgreSQL query and return all results.
+        
+        Uses server-side cursor for memory-efficient large result set handling.
         
         Args:
             query: SQL query string
             params: Optional parameters for parameterized query
             timeout: Optional timeout in seconds
+            batch_size: Number of rows to fetch at a time (default 10000)
             
         Returns:
             List of result rows as dictionaries
@@ -146,25 +155,36 @@ class PostgreSQLConnector(DatabaseConnector):
             with self.get_connection() as conn:
                 # Set statement timeout if provided
                 if timeout:
-                    cursor = conn.cursor()
-                    cursor.execute(f"SET statement_timeout = {timeout * 1000}")  # milliseconds
-                    cursor.close()
+                    setup_cursor = conn.cursor()
+                    setup_cursor.execute(f"SET statement_timeout = {timeout * 1000}")  # milliseconds
+                    setup_cursor.close()
                 
-                # Execute query with dict cursor for named columns
-                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                # Use server-side cursor for memory efficiency
+                cursor_name = f"query_cursor_{id(self)}"
+                cursor = conn.cursor(
+                    name=cursor_name,
+                    cursor_factory=psycopg2.extras.RealDictCursor
+                )
+                cursor.itersize = batch_size
                 
                 if params:
                     cursor.execute(query, params)
                 else:
                     cursor.execute(query)
                 
-                # Fetch all results
-                results = cursor.fetchall()
+                # Fetch in batches to avoid memory issues
+                results = []
+                while True:
+                    batch = cursor.fetchmany(batch_size)
+                    if not batch:
+                        break
+                    results.extend([dict(row) for row in batch])
+                    logger.debug(f"Fetched {len(results)} rows so far...")
                 
                 cursor.close()
                 
-                # Convert RealDictRow to regular dict
-                return [dict(row) for row in results]
+                logger.info(f"Query executed successfully, returned {len(results)} rows")
+                return results
                 
         except psycopg2.extensions.QueryCanceledError as e:
             logger.error(f"Query timeout: {e}")
@@ -176,7 +196,7 @@ class PostgreSQLConnector(DatabaseConnector):
         
         except psycopg2.Error as e:
             logger.error(f"PostgreSQL query failed: {e}")
-            raise DatabaseQueryError(f"Query execution failed: {str(e)}")
+            raise DatabaseQueryError(f"Query failed: {str(e)}")
         
         except Exception as e:
             logger.error(f"Unexpected error executing query: {e}")

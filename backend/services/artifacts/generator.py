@@ -23,6 +23,142 @@ class ArtifactGenerator:
     """Service for generating artifacts in multiple formats"""
     
     @staticmethod
+    def generate_xml_from_dicts(
+        data: List[Dict[str, Any]],
+        filepath: str,
+        root_name: str = 'Document',
+        row_name: str = 'Tx',
+        pretty_print: bool = True,
+        include_declaration: bool = True,
+        namespace: Optional[str] = None,
+        namespace_prefix: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate hierarchical XML from a list of nested dictionaries.
+        
+        This method properly handles nested dict structures like:
+        [{'New': {'TxId': '123', 'Buyr': {'LEI': 'ABC'}}}]
+        
+        Args:
+            data: List of nested dictionaries
+            filepath: Output file path
+            root_name: Name of root XML element
+            row_name: Name of each row wrapper element
+            pretty_print: Whether to indent the output
+            include_declaration: Whether to include XML declaration
+            namespace: Optional XML namespace
+            namespace_prefix: Optional namespace prefix
+            
+        Returns:
+            Dict with metadata
+        """
+        try:
+            logger.info(f"Generating hierarchical XML artifact: {filepath}")
+            
+            indent = '    ' if pretty_print else ''
+            newline = '\n' if pretty_print else ''
+            
+            lines = []
+            
+            # XML Declaration
+            if include_declaration:
+                lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+            
+            # Root element with optional namespace
+            if namespace and namespace_prefix:
+                lines.append(f'<{root_name} xmlns:{namespace_prefix}="{namespace}">')
+            elif namespace:
+                lines.append(f'<{root_name} xmlns="{namespace}">')
+            else:
+                lines.append(f'<{root_name}>')
+            
+            # Process each record
+            for record in data:
+                # Wrap in row element
+                lines.append(f'{indent}<{row_name}>')
+                # Recursively build XML from nested dict
+                record_xml = ArtifactGenerator._dict_to_xml(record, 2, pretty_print)
+                lines.append(record_xml)
+                lines.append(f'{indent}</{row_name}>')
+            
+            # Close root
+            lines.append(f'</{root_name}>')
+            
+            # Join and write
+            xml_content = newline.join(lines)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(xml_content)
+            
+            # Generate metadata
+            import pandas as pd
+            dummy_df = pd.DataFrame({'records': range(len(data))})
+            metadata = ArtifactGenerator._generate_metadata(filepath, dummy_df, 'application/xml')
+            metadata['row_count'] = len(data)
+            
+            logger.info(f"Hierarchical XML artifact generated: {metadata['size_bytes']} bytes")
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Failed to generate hierarchical XML: {e}")
+            raise
+    
+    @staticmethod
+    def _dict_to_xml(data: Any, indent_level: int = 0, pretty_print: bool = True) -> str:
+        """
+        Recursively convert a dictionary or value to XML string.
+        
+        Args:
+            data: Dictionary, list, or primitive value
+            indent_level: Current indentation level
+            pretty_print: Whether to format with indentation
+            
+        Returns:
+            XML string
+        """
+        indent = '    ' * indent_level if pretty_print else ''
+        newline = '\n' if pretty_print else ''
+        lines = []
+        
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if value is None:
+                    continue
+                    
+                # Escape XML special chars in key
+                safe_key = str(key).replace(' ', '_').replace('-', '_')
+                
+                if isinstance(value, dict):
+                    # Nested dict
+                    lines.append(f'{indent}<{safe_key}>')
+                    child_xml = ArtifactGenerator._dict_to_xml(value, indent_level + 1, pretty_print)
+                    if child_xml:
+                        lines.append(child_xml)
+                    lines.append(f'{indent}</{safe_key}>')
+                elif isinstance(value, list):
+                    # List of items
+                    for item in value:
+                        lines.append(f'{indent}<{safe_key}>')
+                        child_xml = ArtifactGenerator._dict_to_xml(item, indent_level + 1, pretty_print)
+                        if child_xml:
+                            lines.append(child_xml)
+                        lines.append(f'{indent}</{safe_key}>')
+                else:
+                    # Leaf value
+                    escaped_value = ArtifactGenerator._escape_xml(str(value))
+                    lines.append(f'{indent}<{safe_key}>{escaped_value}</{safe_key}>')
+        elif isinstance(data, list):
+            for item in data:
+                item_xml = ArtifactGenerator._dict_to_xml(item, indent_level, pretty_print)
+                if item_xml:
+                    lines.append(item_xml)
+        else:
+            # Primitive value
+            escaped = ArtifactGenerator._escape_xml(str(data))
+            return f'{indent}{escaped}'
+        
+        return newline.join(lines)
+    
+    @staticmethod
     def generate_csv(
         data: pd.DataFrame,
         filepath: str,

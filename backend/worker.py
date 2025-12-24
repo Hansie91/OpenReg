@@ -226,10 +226,35 @@ def execute_report_task(job_run_id: str):
             job_run.status = models.JobRunStatus.FAILED
             job_run.error_message = f"{result.error_type}: {result.error}"
             job_run.ended_at = datetime.utcnow()
+            
+            # Persist execution logs even on failure
+            if result.logs:
+                for i, log_msg in enumerate(result.logs):
+                    log_entry = models.JobRunLog(
+                        job_run_id=job_run.id,
+                        line_number=i + 1,
+                        level=models.LogLevel.INFO,
+                        message=log_msg
+                    )
+                    db.add(log_entry)
+            
             db.commit()
             return
         
         logger.info(f"Code executed successfully in {result.execution_time_seconds:.2f}s")
+        
+        # Persist execution logs to database for UI display
+        if result.logs:
+            logger.info(f"Persisting {len(result.logs)} execution log entries")
+            for i, log_msg in enumerate(result.logs):
+                log_entry = models.JobRunLog(
+                    job_run_id=job_run.id,
+                    line_number=i + 1,
+                    level=models.LogLevel.INFO,
+                    message=log_msg
+                )
+                db.add(log_entry)
+            db.commit()
         
         # Get pre-delivery validation rules
         pre_delivery_validations = db.query(models.ReportValidation).filter(
@@ -242,7 +267,19 @@ def execute_report_task(job_run_id: str):
         # Run pre-delivery validations on output
         final_output = result.output_data
         
-        # Convert list/dict to DataFrame if needed
+        # Preserve raw list of dicts for hierarchical XML generation
+        raw_output_data = None
+        if isinstance(final_output, list) and len(final_output) > 0:
+            # Check if first element is a dict with nested structure (for hierarchical XML)
+            first_elem = final_output[0]
+            if isinstance(first_elem, dict):
+                # Check for nested dicts (indicates hierarchical structure)
+                has_nested = any(isinstance(v, dict) for v in first_elem.values())
+                if has_nested:
+                    raw_output_data = final_output  # Preserve for hierarchical XML
+                    logger.info(f"Preserved {len(final_output)} records with nested structure for hierarchical XML")
+        
+        # Convert list/dict to DataFrame if needed (for validations and non-XML formats)
         if final_output is not None:
             if isinstance(final_output, list) and len(final_output) > 0:
                 logger.info(f"Converting list of {len(final_output)} records to DataFrame")
@@ -389,18 +426,33 @@ def execute_report_task(job_run_id: str):
                             xml_options = output_config.get('xml', {})
                             pretty_print = xml_options.get('pretty_print', True)
                             include_declaration = xml_options.get('include_declaration', True)
-                            root_name = xml_options.get('root_element', 'data')
+                            root_name = xml_options.get('root_element', 'Document')
+                            row_name = xml_options.get('row_element', 'Tx')
                             
-                            metadata = ArtifactGenerator.generate_xml(
-                                data=final_output,
-                                filepath=filepath,
-                                root_name=root_name,
-                                field_mappings=field_mappings,
-                                namespace=namespace,
-                                namespace_prefix=namespace_prefix,
-                                pretty_print=pretty_print,
-                                include_declaration=include_declaration
-                            )
+                            # Use hierarchical generator if we have nested dict data
+                            if raw_output_data is not None:
+                                logger.info(f"Using hierarchical XML generator for {len(raw_output_data)} nested records")
+                                metadata = ArtifactGenerator.generate_xml_from_dicts(
+                                    data=raw_output_data,
+                                    filepath=filepath,
+                                    root_name=root_name,
+                                    row_name=row_name,
+                                    pretty_print=pretty_print,
+                                    include_declaration=include_declaration,
+                                    namespace=namespace,
+                                    namespace_prefix=namespace_prefix
+                                )
+                            else:
+                                metadata = ArtifactGenerator.generate_xml(
+                                    data=final_output,
+                                    filepath=filepath,
+                                    root_name=root_name,
+                                    field_mappings=field_mappings,
+                                    namespace=namespace,
+                                    namespace_prefix=namespace_prefix,
+                                    pretty_print=pretty_print,
+                                    include_declaration=include_declaration
+                                )
                         elif output_format == 'txt':
                             # Tab-delimited text file
                             metadata = ArtifactGenerator.generate_txt(
