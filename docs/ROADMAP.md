@@ -134,9 +134,9 @@ The MVP provides the foundation infrastructure and demonstrates core concepts.
   - [x] Manual trigger
 
 #### 5. Enhanced UI Components
-- [ ] **Python Code Editor**
-  - [ ] Monaco Editor integration
-  - [x] Syntax highlighting (basic)
+- [x] **Python Code Editor**
+  - [x] Monaco Editor integration
+  - [x] Syntax highlighting (Python)
   - [ ] Autocomplete for approved libraries
   - [ ] Linting and error checking
   - [x] Save drafts
