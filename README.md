@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/assets/logo-banner.svg" alt="OpenReg" width="600">
+  <img src="docs/assets/openreg-logo.jpg" alt="OpenReg" width="600">
 </p>
-
-<h1 align="center">OpenReg</h1>
 
 <p align="center">
   <strong>Enterprise-Grade Regulatory Reporting Platform</strong>
