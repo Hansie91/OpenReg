@@ -281,3 +281,19 @@ export const streamingAPI = {
     // Buffer statistics
     getBufferStats: () => api.get('/streaming/buffer/stats'),
 };
+
+// Data Lineage API (v2 Enterprise)
+export const lineageAPI = {
+    // Get full lineage graph for current tenant
+    getGraph: () => api.get('/lineage/graph'),
+
+    // Get upstream/downstream lineage for a specific report
+    getReportLineage: (reportId: string) => api.get(`/lineage/report/${reportId}`),
+
+    // Trigger full lineage rebuild for tenant
+    refresh: () => api.post('/lineage/refresh'),
+
+    // Rebuild lineage for a specific report
+    rebuildReport: (reportId: string) => api.post(`/lineage/report/${reportId}/rebuild`),
+};
+

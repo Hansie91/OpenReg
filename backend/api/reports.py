@@ -13,6 +13,7 @@ from uuid import UUID
 from database import get_db
 from services.auth import get_current_user, log_audit
 from services.code_generator import CodeGenerator
+from services.lineage import LineageService
 import models
 
 router = APIRouter()
@@ -370,6 +371,14 @@ async def create_report_version(
     # Set as current version
     report.current_version_id = db_version.id
     db.commit()
+    
+    # Auto-rebuild lineage for this report
+    try:
+        LineageService.build_lineage_for_report(db, report_id, current_user.tenant_id)
+    except Exception as e:
+        # Lineage rebuild failure should not fail version creation
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to rebuild lineage for report {report_id}: {e}")
     
     # Audit log
     log_audit(db, current_user, models.AuditAction.CREATE, "ReportVersion", str(db_version.id))

@@ -993,3 +993,86 @@ class StreamingConsumerState(Base, TimestampMixin):
     # Relationships
     topic = relationship("StreamingTopic", back_populates="consumer_states")
 
+
+# === Data Lineage (v2 Enterprise) ===
+
+class LineageNodeType(str, enum.Enum):
+    """Type of node in the data lineage graph"""
+    CONNECTOR = "connector"         # Database source
+    REPORT = "report"               # Report output
+    MAPPING_SET = "mapping_set"     # Cross-reference mapping
+    VALIDATION = "validation"       # Validation rule (future)
+    DESTINATION = "destination"     # Delivery destination (future)
+
+
+class LineageRelationshipType(str, enum.Enum):
+    """Type of relationship between lineage nodes"""
+    PROVIDES_DATA = "provides_data"     # Connector → Report
+    USES_MAPPING = "uses_mapping"       # MappingSet → Report
+    DELIVERS_TO = "delivers_to"         # Report → Destination (future)
+    VALIDATES = "validates"             # ValidationRule → Report (future)
+
+
+class LineageNode(Base, TimestampMixin):
+    """
+    Represents a node in the data lineage graph.
+    
+    Nodes are created/updated automatically when reports are saved.
+    Each node corresponds to a real entity (connector, report, mapping set).
+    """
+    __tablename__ = "lineage_nodes"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    node_type = Column(Enum(LineageNodeType), nullable=False, index=True)
+    entity_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # FK to actual entity
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Visual positioning (for graph layout persistence)
+    position_x = Column(Integer, nullable=True)
+    position_y = Column(Integer, nullable=True)
+    
+    # Extended metadata
+    node_metadata = Column(JSONB, default={})
+    # For connectors: {db_type, host, database}
+    # For reports: {version, output_format}
+    # For mappings: {entry_count}
+    
+    # Relationships
+    outgoing_edges = relationship("LineageEdge", foreign_keys="LineageEdge.source_node_id", 
+                                   back_populates="source_node", cascade="all, delete-orphan")
+    incoming_edges = relationship("LineageEdge", foreign_keys="LineageEdge.target_node_id",
+                                   back_populates="target_node", cascade="all, delete-orphan")
+
+
+class LineageEdge(Base, TimestampMixin):
+    """
+    Represents a data flow relationship between two lineage nodes.
+    
+    Edges capture how data flows from sources through transformations to outputs.
+    """
+    __tablename__ = "lineage_edges"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    source_node_id = Column(UUID(as_uuid=True), ForeignKey("lineage_nodes.id"), nullable=False, index=True)
+    target_node_id = Column(UUID(as_uuid=True), ForeignKey("lineage_nodes.id"), nullable=False, index=True)
+    relationship_type = Column(Enum(LineageRelationshipType), nullable=False)
+    
+    # Optional label for display
+    label = Column(String(100), nullable=True)
+    
+    # Phase 2: Field-level lineage placeholders
+    source_fields = Column(JSONB, nullable=True)  # ["column1", "column2"]
+    target_fields = Column(JSONB, nullable=True)  # ["field1", "field2"]
+    transformation = Column(Text, nullable=True)  # Description of transformation
+    
+    # Extended metadata
+    edge_metadata = Column(JSONB, default={})
+    
+    # Relationships
+    source_node = relationship("LineageNode", foreign_keys=[source_node_id], back_populates="outgoing_edges")
+    target_node = relationship("LineageNode", foreign_keys=[target_node_id], back_populates="incoming_edges")
+
+

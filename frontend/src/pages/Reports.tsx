@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { reportsAPI, connectorsAPI, destinationsAPI, reportDestinationsAPI, streamingAPI } from '../services/api';
+import { reportsAPI, connectorsAPI, destinationsAPI, reportDestinationsAPI, streamingAPI, lineageAPI } from '../services/api';
 import Editor from '@monaco-editor/react';
 import ReportWizard from '../components/ReportWizard';
+import LineageGraph from '../components/LineageGraph';
+import LineageSidePanel from '../components/LineageSidePanel';
 
 interface Report {
     id: string;
@@ -114,6 +116,95 @@ def transform(db, mappings, params):
     ]
 `;
 
+// Helper component for lineage graph with data fetching
+function LineageGraphWrapper({ reportId, onEdgeClick }: { reportId: string, onEdgeClick: (edge: any) => void }) {
+    const { data: lineageData, isLoading, error } = useQuery(
+        ['report-lineage', reportId],
+        () => lineageAPI.getReportLineage(reportId).then(res => res.data),
+        { enabled: !!reportId }
+    );
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                    <div className="spinner mx-auto text-indigo-600"></div>
+                    <p className="mt-3 text-sm text-gray-500">Loading lineage data...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="text-center text-red-500">
+                    <p>Failed to load lineage data</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Transform report lineage response to graph format
+    const nodes: any[] = [];
+    const edges: any[] = [];
+
+    if (lineageData) {
+        // Add report node
+        nodes.push({
+            id: lineageData.report.id,
+            type: 'report',
+            data: {
+                label: lineageData.report.name,
+                entityId: reportId
+            },
+            position: { x: 280, y: 50 }
+        });
+
+        // Add upstream nodes (connectors, mappings)
+        lineageData.upstream?.forEach((node: any, idx: number) => {
+            nodes.push({
+                id: node.id,
+                type: node.type,
+                data: {
+                    label: node.name,
+                    entityId: node.entityId
+                },
+                position: { x: 0, y: idx * 100 }
+            });
+            edges.push({
+                id: `edge-${node.id}-${lineageData.report.id}`,
+                source: node.id,
+                target: lineageData.report.id,
+                label: node.relationship.replace('_', ' '),
+                data: node.data
+            });
+        });
+
+        // Add downstream nodes (destinations)
+        lineageData.downstream?.forEach((node: any, idx: number) => {
+            nodes.push({
+                id: node.id,
+                type: node.type,
+                data: {
+                    label: node.name,
+                    entityId: node.entityId
+                },
+                position: { x: 560, y: idx * 100 }
+            });
+            edges.push({
+                id: `edge-${lineageData.report.id}-${node.id}`,
+                source: lineageData.report.id,
+                target: node.id,
+                label: node.relationship.replace('_', ' '),
+                data: node.data
+            });
+        });
+    }
+
+    return <LineageGraph nodes={nodes} edges={edges} onEdgeClick={onEdgeClick} />;
+}
+
 export default function Reports() {
     const queryClient = useQueryClient();
     const [showWizard, setShowWizard] = useState(false);
@@ -123,7 +214,7 @@ export default function Reports() {
     const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const [deletingReport, setDeletingReport] = useState<Report | null>(null);
-    const [editorTab, setEditorTab] = useState<'info' | 'code' | 'history' | 'config' | 'delivery' | 'streaming'>('info');
+    const [editorTab, setEditorTab] = useState<'info' | 'code' | 'history' | 'config' | 'delivery' | 'streaming' | 'lineage'>('info');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('editor-dark-mode');
@@ -157,6 +248,9 @@ export default function Reports() {
     const [csvDelimiter, setCsvDelimiter] = useState(',');
     const [csvQuote, setCsvQuote] = useState('"');
     const [csvHeader, setCsvHeader] = useState(true);
+
+    // Lineage State
+    const [selectedEdge, setSelectedEdge] = useState<any>(null);
 
     // XML options
     const [xmlRootElement, setXmlRootElement] = useState('Report');
@@ -719,6 +813,15 @@ export default function Reports() {
                                     }`}
                             >
                                 Streaming
+                            </button>
+                            <button
+                                onClick={() => setEditorTab('lineage')}
+                                className={`px-4 py-2.5 text-sm font-medium transition-all ${editorTab === 'lineage'
+                                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                    }`}
+                            >
+                                Data Lineage
                             </button>
                             {hasUnsavedChanges && (
                                 <span className="ml-auto text-sm text-amber-600 flex items-center">
@@ -1694,6 +1797,47 @@ export default function Reports() {
                                                     </p>
                                                 </div>
                                             </>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Data Lineage Tab */}
+                            {editorTab === 'lineage' && selectedReport && (
+                                <div className="flex-1 flex flex-col overflow-hidden relative">
+                                    <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-medium text-gray-900">Data Lineage</h4>
+                                            <p className="text-sm text-gray-500">Visualize data flow from sources to this report</p>
+                                        </div>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    await lineageAPI.rebuildReport(selectedReport.id);
+                                                    queryClient.invalidateQueries(['report-lineage', selectedReport.id]);
+                                                } catch (err) {
+                                                    console.error('Failed to rebuild lineage:', err);
+                                                }
+                                            }}
+                                            className="btn btn-secondary text-sm"
+                                        >
+                                            🔄 Refresh Lineage
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 relative" style={{ minHeight: '400px' }}>
+                                        <div className="absolute inset-0">
+                                            <LineageGraphWrapper
+                                                reportId={selectedReport.id}
+                                                onEdgeClick={(edge) => setSelectedEdge(edge)}
+                                            />
+                                        </div>
+
+                                        {/* Side Panel for Edge Details */}
+                                        {selectedEdge && (
+                                            <LineageSidePanel
+                                                edge={selectedEdge}
+                                                onClose={() => setSelectedEdge(null)}
+                                            />
                                         )}
                                     </div>
                                 </div>
