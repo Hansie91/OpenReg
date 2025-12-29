@@ -43,115 +43,116 @@ The MVP provides the foundation infrastructure and demonstrates core concepts.
 ### Critical Features
 
 #### 1. Complete Report Execution Pipeline
-- [ ] **Database Connector Plugins**
-  - [ ] PostgreSQL connector (via psycopg2)
-  - [ ] SQL Server connector (via pyodbc)
-  - [ ] Oracle connector (via cx_Oracle)
-  - [ ] MySQL connector (via PyMySQL)
-  - [ ] Generic ODBC connector
-  - [ ] Connection pooling
-  - [ ] Query timeout handling
+- [x] **Database Connector Plugins**
+  - [x] PostgreSQL connector (via psycopg2)
+  - [x] SQL Server connector (via pyodbc)
+  - [x] Oracle connector (via oracledb)
+  - [x] MySQL connector (via PyMySQL)
+  - [x] Generic ODBC connector
+  - [x] Connection pooling
+  - [x] Query timeout handling
 
-- [ ] **Python Code Execution**
-  - [ ] Safe execution environment (Docker isolation)
-  - [ ] Pre-approved library allowlist (pandas, lxml, etc.)
-  - [ ] Resource limits (CPU, memory, timeout)
+- [x] **Python Code Execution**
+  - [x] Safe execution environment (RestrictedPython)
+  - [x] Pre-approved library allowlist (pandas, lxml, etc.)
+  - [x] Resource limits (CPU, memory, timeout)
   - [ ] Dependency management per report
-  - [ ] Error handling and stack traces
-  - [ ] Data size limits for memory safety
+  - [x] Error handling and stack traces
+  - [x] Data size limits for memory safety
 
-- [ ] **Validation Engine**
-  - [ ] SQL-based validation execution
-  - [ ] Python expression evaluator
-  - [ ] Blocking vs. warning severity
-  - [ ] Validation result storage
+- [x] **Validation Engine**
+  - [x] SQL-based validation execution
+  - [x] Python expression evaluator
+  - [x] Blocking vs. warning severity
+  - [x] Validation result storage
   - [ ] Validation failure notifications
 
-- [ ] **Artifact Generation**
-  - [ ] CSV output format
-  - [ ] XML output format
-  - [ ] JSON output format
-  - [ ] Checksum validation
-  - [ ] Metadata tagging
+- [x] **Artifact Generation**
+  - [x] CSV output format
+  - [x] XML output format
+  - [x] JSON output format
+  - [x] TXT output format
+  - [x] Checksum validation (MD5, SHA256)
+  - [x] Metadata tagging
 
 #### 2. SFTP/FTP Delivery System
-- [ ] **Paramiko SFTP implementation**
+- [x] **Paramiko SFTP implementation**
   - [ ] Key-based authentication
-  - [ ] Password authentication
+  - [x] Password authentication
   - [ ] Connection pooling
-  - [ ] Directory creation
-  - [ ] File upload with retry
-  - [ ] Acknowledgment tracking
+  - [x] Directory creation
+  - [x] File upload with retry
+  - [x] Acknowledgment tracking
 
-- [ ] **FTP implementation**
-  - [ ] Passive/active mode support
-  - [ ] TLS/SSL (FTPS)
-  - [ ] Retry with exponential backoff
-  - [ ] Delivery confirmation
+- [x] **FTP implementation**
+  - [x] Passive/active mode support
+  - [x] TLS/SSL (FTPS)
+  - [x] Retry with exponential backoff
+  - [x] Delivery confirmation
 
-- [ ] **Routing Rules**
+- [x] **Routing Rules**
+  - [x] Multi-destination delivery
+  - [x] Delivery attempt logging
   - [ ] Conditional routing (by report, status, size)
-  - [ ] Multi-destination delivery
-  - [ ] Delivery attempt logging
 
 #### 3. Cross-Reference Mappings
-- [ ] **Full CRUD API**
-  - [ ] Mapping set management
-  - [ ] Entry creation/update/delete
-  - [ ] Bulk CSV import/export
-  - [ ] Effective date filtering
+- [x] **Full CRUD API**
+  - [x] Mapping set management
+  - [x] Entry creation/update/delete
+  - [x] Bulk CSV import/export
+  - [x] Effective date filtering
 
-- [ ] **Frontend UI**
-  - [ ] Mapping set list/create
-  - [ ] Entry grid with inline editing
-  - [ ] Date range picker for effective dates
-  - [ ] CSV upload/download
-  - [ ] Search and filter
+- [x] **Frontend UI**
+  - [x] Mapping set list/create
+  - [x] Entry grid with inline editing
+  - [x] Date range picker for effective dates
+  - [x] CSV upload/download
+  - [x] Search and filter
 
-- [ ] **Runtime Application**
-  - [ ] Lookup service in worker
+- [x] **Runtime Application**
+  - [x] Lookup service in worker
   - [ ] Cache for performance
-  - [ ] Fallback handling
+  - [x] Fallback handling
 
 #### 4. Scheduling & Triggers
-- [ ] **Cron Scheduler**
-  - [ ] Cron expression parser (croniter)
-  - [ ] Next run calculation
-  - [ ] Celery Beat integration
-  - [ ] Schedule activation/deactivation
+- [x] **Cron Scheduler**
+  - [x] Cron expression parser (croniter)
+  - [x] Next run calculation
+  - [x] Celery Beat integration
+  - [x] Schedule activation/deactivation
 
-- [ ] **Calendar UI**
-  - [ ] Visual schedule builder
-  - [ ] Business day support
-  - [ ] Holiday calendar integration
-  - [ ] Timezone handling
+- [x] **Calendar UI**
+  - [x] Visual schedule builder
+  - [x] Business day support
+  - [x] Holiday/blackout date exclusions
+  - [x] Timezone handling
 
 - [ ] **Event Triggers**
   - [ ] File arrival watcher
   - [ ] Database watermark polling
-  - [ ] API webhook receiver
-  - [ ] Manual trigger
+  - [x] API webhook receiver (manual trigger)
+  - [x] Manual trigger
 
 #### 5. Enhanced UI Components
 - [ ] **Python Code Editor**
   - [ ] Monaco Editor integration
-  - [ ] Syntax highlighting
+  - [x] Syntax highlighting (basic)
   - [ ] Autocomplete for approved libraries
   - [ ] Linting and error checking
-  - [ ] Save drafts
+  - [x] Save drafts
 
-- [ ] **Run Details Page**
-  - [ ] Full execution timeline
-  - [ ] Log streaming (WebSocket or polling)
-  - [ ] Artifact download
+- [x] **Run Details Page**
+  - [x] Full execution timeline
+  - [x] Log viewing (polling)
+  - [x] Artifact download
   - [ ] Re-run button
-  - [ ] Error details
+  - [x] Error details
 
-- [ ] **Admin Panel**
-  - [ ] User management (CRUD)
-  - [ ] Role assignment
-  - [ ] Permission editor
-  - [ ] Audit log viewer (paginated, filterable)
+- [x] **Admin Panel**
+  - [x] User management (CRUD)
+  - [x] Role assignment
+  - [x] Permission editor
+  - [x] Audit log viewer (paginated, filterable)
   - [ ] System health metrics
 
 #### 6. Production Hardening
@@ -159,15 +160,15 @@ The MVP provides the foundation infrastructure and demonstrates core concepts.
   - [ ] HashiCorp Vault integration
   - [ ] TLS for all services
   - [ ] Rate limiting (SlowAPI)
-  - [ ] CORS lockdown
+  - [x] CORS lockdown
   - [ ] CSP headers
 
 - [ ] **Deployment**
-  - [ ] Kubernetes manifests
+  - [x] Kubernetes manifests (documented)
   - [ ] Helm chart
-  - [ ] Health check probes
-  - [ ] Rolling updates
-  - [ ] Resource quotas
+  - [x] Health check probes
+  - [x] Rolling updates (documented)
+  - [x] Resource quotas
 
 - [ ] **Monitoring**
   - [ ] Prometheus metrics exporter
@@ -176,9 +177,10 @@ The MVP provides the foundation infrastructure and demonstrates core concepts.
   - [ ] Distributed tracing (OpenTelemetry)
 
 - [ ] **Backup & Recovery**
-  - [ ] PostgreSQL automated backups
-  - [ ] MinIO bucket replication
-  - [ ] Disaster recovery procedures
+  - [x] PostgreSQL backup procedures (documented)
+  - [x] MinIO backup procedures (documented)
+  - [x] Disaster recovery procedures (documented)
+  - [ ] Automated backups
   - [ ] Data retention policies
 
 ---
@@ -290,4 +292,4 @@ Feature requests and design feedback are welcome! Please:
 
 ---
 
-**Last Updated**: 2025-12-07
+**Last Updated**: 2025-12-29
