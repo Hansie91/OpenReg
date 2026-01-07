@@ -18,6 +18,7 @@ import Destinations from './pages/Destinations';
 import Streaming from './pages/Streaming';
 import Admin from './pages/Admin';
 import Schemas from './pages/Schemas';
+import ExternalAPI from './pages/ExternalAPI';
 import Layout from './components/Layout';
 
 const queryClient = new QueryClient();
@@ -107,6 +108,7 @@ function AppContent() {
                     <Route path="destinations" element={<Destinations />} />
                     <Route path="streaming" element={<Streaming />} />
                     <Route path="schemas" element={<Schemas />} />
+                    <Route path="external-api" element={<ExternalAPI />} />
                     <Route path="admin" element={<Admin />} />
                 </Route>
             </Routes>

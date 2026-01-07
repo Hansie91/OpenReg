@@ -785,12 +785,22 @@ def deliver_artifact_task(self, artifact_id: str, destination_id: str, attempt_n
         db.close()
 
 
-# Celery Beat Schedule (for scheduled reports)
+# Celery Beat Schedule (for scheduled reports and external API sync)
 app.conf.beat_schedule = {
-    # Example: Check for scheduled reports every minute
+    # Check for scheduled reports every minute
     'check-scheduled-reports': {
         'task': 'check_schedules',
         'schedule': 60.0,  # Every 60 seconds
+    },
+    # Check for external API syncs that need to run
+    'check-external-api-syncs': {
+        'task': 'tasks.external_sync_tasks.check_scheduled_syncs_task',
+        'schedule': 60.0,  # Every 60 seconds
+    },
+    # Clean up old sync logs daily at 3 AM
+    'cleanup-external-sync-logs': {
+        'task': 'tasks.external_sync_tasks.cleanup_old_sync_logs_task',
+        'schedule': crontab(hour=3, minute=0),
     },
 }
 

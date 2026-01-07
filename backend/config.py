@@ -165,7 +165,15 @@ class Settings(BaseSettings):
     # Worker Limits
     WORKER_MAX_EXECUTION_TIME: int = 3600  # 1 hour max per job
     WORKER_MAX_MEMORY_MB: int = 2048  # 2GB max per worker
-    
+
+    # External API Sync Settings
+    EXTERNAL_API_DEFAULT_TIMEOUT: int = 30  # HTTP request timeout in seconds
+    EXTERNAL_API_MAX_RETRIES: int = 3  # Maximum retry attempts
+    EXTERNAL_API_RETRY_BASE_DELAY: int = 2  # Base delay for exponential backoff
+    EXTERNAL_API_CACHE_TTL: int = 3600  # Response cache TTL in seconds
+    EXTERNAL_API_DEFAULT_SYNC_SCHEDULE: str = "0 2 * * *"  # Daily at 2 AM UTC
+    EXTERNAL_API_RATE_LIMIT_PER_MINUTE: int = 60  # Default rate limit
+
     class Config:
         env_file = ".env"
         case_sensitive = True

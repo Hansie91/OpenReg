@@ -9,7 +9,7 @@ import redis
 
 from database import engine, Base, get_db
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks, external_api
 
 # Configure structured logging
 from core.logging import configure_logging, get_logger
@@ -233,6 +233,7 @@ app.include_router(streaming.router, prefix=f"{API_PREFIX}", tags=["Streaming"])
 app.include_router(lineage.router, prefix=f"{API_PREFIX}/lineage", tags=["Data Lineage"])
 app.include_router(workflow.router, prefix=f"{API_PREFIX}/workflow", tags=["Workflow"])
 app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["Webhooks"])
+app.include_router(external_api.router, prefix=API_PREFIX, tags=["External API"])
 
 
 @app.get("/")

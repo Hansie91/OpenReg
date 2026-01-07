@@ -181,6 +181,41 @@ class TenantEnvironment(str, enum.Enum):
     SANDBOX = "sandbox"
 
 
+class ExternalSyncStatus(str, enum.Enum):
+    """Sync status for items from external regulatory API"""
+    SYNCED = "synced"                      # In sync with upstream
+    LOCAL_MODIFIED = "local_modified"      # Local edits exist (forked)
+    UPSTREAM_CHANGED = "upstream_changed"  # New upstream version available
+    CONFLICT = "conflict"                  # Both changed - needs resolution
+    LOCAL_ONLY = "local_only"              # Created locally, never synced
+
+
+class ExternalSyncSource(str, enum.Enum):
+    """Source types for external regulatory data"""
+    REGULATORY_API = "regulatory_api"      # Paid regulatory API
+    MANUAL_IMPORT = "manual_import"        # Manual JSON upload
+
+
+class ExternalAPIAuthType(str, enum.Enum):
+    """Authentication types for external APIs"""
+    API_KEY = "api_key"
+    OAUTH2 = "oauth2"
+    BASIC = "basic"
+
+
+class SyncTriggerType(str, enum.Enum):
+    """How the sync was triggered"""
+    SCHEDULED = "scheduled"
+    MANUAL = "manual"
+    API = "api"
+
+
+class SyncModeType(str, enum.Enum):
+    """Type of sync operation"""
+    FULL = "full"
+    DIFFERENTIAL = "differential"
+
+
 # === Base Mixin ===
 
 class TimestampMixin:
@@ -281,7 +316,7 @@ class Connector(Base, TimestampMixin):
 
 class Report(Base, TimestampMixin):
     __tablename__ = "reports"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
@@ -289,7 +324,19 @@ class Report(Base, TimestampMixin):
     current_version_id = Column(UUID(as_uuid=True), nullable=True)  # FK added after ReportVersion
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    
+
+    # === External Sync Tracking ===
+    external_source = Column(Enum(ExternalSyncSource), nullable=True, index=True)
+    external_api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id"), nullable=True, index=True)
+    external_id = Column(String(255), nullable=True, index=True)  # ID from external API
+    upstream_version = Column(String(100), nullable=True)
+    upstream_hash = Column(String(64), nullable=True)  # SHA-256 of upstream content
+    local_hash = Column(String(64), nullable=True)  # SHA-256 of current content
+    sync_status = Column(Enum(ExternalSyncStatus), default=ExternalSyncStatus.LOCAL_ONLY, nullable=True, index=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    forked_at = Column(DateTime(timezone=True), nullable=True)
+    forked_from_version = Column(String(100), nullable=True)
+
     # Streaming configuration for real-time transactions
     # Schema: {
     #   "enabled": bool,
@@ -493,12 +540,24 @@ mapping_entry_reports = Table(
 
 class MappingSet(Base, TimestampMixin):
     __tablename__ = "mapping_sets"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    
+
+    # === External Sync Tracking ===
+    external_source = Column(Enum(ExternalSyncSource), nullable=True, index=True)
+    external_api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id"), nullable=True, index=True)
+    external_id = Column(String(255), nullable=True, index=True)
+    upstream_version = Column(String(100), nullable=True)
+    upstream_hash = Column(String(64), nullable=True)
+    local_hash = Column(String(64), nullable=True)
+    sync_status = Column(Enum(ExternalSyncStatus), default=ExternalSyncStatus.LOCAL_ONLY, nullable=True, index=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    forked_at = Column(DateTime(timezone=True), nullable=True)
+    forked_from_version = Column(String(100), nullable=True)
+
     # Relationships
     entries = relationship("CrossReferenceEntry", back_populates="mapping_set", cascade="all, delete-orphan")
 
@@ -525,7 +584,7 @@ class CrossReferenceEntry(Base, TimestampMixin):
 
 class ValidationRule(Base, TimestampMixin):
     __tablename__ = "validation_rules"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
@@ -536,7 +595,19 @@ class ValidationRule(Base, TimestampMixin):
     error_message = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    
+
+    # === External Sync Tracking ===
+    external_source = Column(Enum(ExternalSyncSource), nullable=True, index=True)
+    external_api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id"), nullable=True, index=True)
+    external_id = Column(String(255), nullable=True, index=True)
+    upstream_version = Column(String(100), nullable=True)
+    upstream_hash = Column(String(64), nullable=True)
+    local_hash = Column(String(64), nullable=True)
+    sync_status = Column(Enum(ExternalSyncStatus), default=ExternalSyncStatus.LOCAL_ONLY, nullable=True, index=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    forked_at = Column(DateTime(timezone=True), nullable=True)
+    forked_from_version = Column(String(100), nullable=True)
+
     # Relationships
     reports = relationship("ReportValidation", back_populates="validation_rule", cascade="all, delete-orphan")
     validation_results = relationship("ValidationResult", back_populates="validation_rule", cascade="all, delete-orphan")
@@ -587,7 +658,7 @@ class ValidationException(Base, TimestampMixin):
 
 class Schedule(Base, TimestampMixin):
     __tablename__ = "schedules"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id"), nullable=False, index=True)
@@ -600,7 +671,19 @@ class Schedule(Base, TimestampMixin):
     last_run_at = Column(DateTime(timezone=True), nullable=True)
     last_run_status = Column(String(50), nullable=True)
     parameters = Column(JSONB, default={}, nullable=True)
-    
+
+    # === External Sync Tracking ===
+    external_source = Column(Enum(ExternalSyncSource), nullable=True, index=True)
+    external_api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id"), nullable=True, index=True)
+    external_id = Column(String(255), nullable=True, index=True)
+    upstream_version = Column(String(100), nullable=True)
+    upstream_hash = Column(String(64), nullable=True)
+    local_hash = Column(String(64), nullable=True)
+    sync_status = Column(Enum(ExternalSyncStatus), default=ExternalSyncStatus.LOCAL_ONLY, nullable=True, index=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    forked_at = Column(DateTime(timezone=True), nullable=True)
+    forked_from_version = Column(String(100), nullable=True)
+
     # Relationships
     report = relationship("Report", back_populates="schedules")
 
@@ -1386,5 +1469,133 @@ class WebhookDelivery(Base, TimestampMixin):
     webhook = relationship("Webhook", back_populates="deliveries")
     job_run = relationship("JobRun")
     artifact = relationship("Artifact")
+
+
+# === External API Sync ===
+
+class ExternalAPIConfig(Base, TimestampMixin):
+    """
+    Configuration for external regulatory API connections.
+
+    Stores connection settings, authentication credentials (encrypted),
+    sync schedule, and schema mapping configuration per tenant.
+    """
+    __tablename__ = "external_api_configs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # API Configuration
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    api_base_url = Column(String(1000), nullable=False)
+    api_version = Column(String(50), nullable=True)
+
+    # Authentication
+    auth_type = Column(Enum(ExternalAPIAuthType), nullable=False, default=ExternalAPIAuthType.API_KEY)
+    encrypted_credentials = Column(LargeBinary, nullable=True)  # Fernet-encrypted JSON
+
+    # Rate Limiting & Retry Config
+    rate_limit_per_minute = Column(Integer, default=60, nullable=False)
+    retry_config = Column(JSONB, default={
+        "max_retries": 3,
+        "backoff": "exponential",
+        "base_delay": 2,
+        "max_delay": 60
+    })
+
+    # Caching
+    cache_ttl_seconds = Column(Integer, default=3600, nullable=False)  # 1 hour default
+
+    # Sync Configuration
+    sync_schedule = Column(String(100), nullable=True)  # Cron expression (e.g., "0 2 * * *" for daily 2 AM)
+    auto_sync_enabled = Column(Boolean, default=True, nullable=False)
+    last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    last_sync_status = Column(String(50), nullable=True)  # success, failed, partial
+    last_sync_message = Column(Text, nullable=True)
+
+    # Schema mapping for flexible API formats
+    # Maps external API response structure to OpenReg models
+    schema_mapping = Column(JSONB, default={
+        "reports_path": "reports",
+        "validations_path": "validation_rules",
+        "reference_data_path": "reference_data",
+        "schedules_path": "schedules",
+        "external_id_field": "external_id",
+        "version_field": "version",
+        "metadata_path": "metadata"
+    })
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    creator = relationship("User")
+    sync_logs = relationship("ExternalAPISyncLog", back_populates="api_config", cascade="all, delete-orphan")
+
+
+class ExternalAPISyncLog(Base, TimestampMixin):
+    """
+    Log of API sync operations for auditing and debugging.
+
+    Records each sync attempt with detailed results including
+    items synced, conflicts detected, and any errors encountered.
+    """
+    __tablename__ = "external_api_sync_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Sync details
+    sync_type = Column(Enum(SyncModeType), nullable=False, default=SyncModeType.DIFFERENTIAL)
+    triggered_by = Column(Enum(SyncTriggerType), nullable=False)
+    trigger_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Timing
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+    # Results - overall
+    status = Column(String(50), nullable=False, default="running")  # running, success, failed, partial
+    items_fetched = Column(Integer, default=0, nullable=False)
+
+    # Results - by entity type
+    reports_created = Column(Integer, default=0, nullable=False)
+    reports_updated = Column(Integer, default=0, nullable=False)
+    reports_skipped = Column(Integer, default=0, nullable=False)
+    validations_created = Column(Integer, default=0, nullable=False)
+    validations_updated = Column(Integer, default=0, nullable=False)
+    validations_skipped = Column(Integer, default=0, nullable=False)
+    reference_data_created = Column(Integer, default=0, nullable=False)
+    reference_data_updated = Column(Integer, default=0, nullable=False)
+    reference_data_skipped = Column(Integer, default=0, nullable=False)
+    schedules_created = Column(Integer, default=0, nullable=False)
+    schedules_updated = Column(Integer, default=0, nullable=False)
+    schedules_skipped = Column(Integer, default=0, nullable=False)
+
+    # Conflicts
+    conflicts_detected = Column(Integer, default=0, nullable=False)
+    conflicts_auto_resolved = Column(Integer, default=0, nullable=False)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    error_details = Column(JSONB, nullable=True)  # Stack trace, API response, etc.
+
+    # Checkpoint for differential sync
+    # Stores the last sync position for resuming
+    sync_checkpoint = Column(JSONB, nullable=True)
+    # {"last_modified": "2024-01-15T00:00:00Z", "page_cursor": "abc123", "api_version": "2024.1"}
+
+    # API response metadata
+    api_response_time_ms = Column(Integer, nullable=True)
+    api_data_version = Column(String(100), nullable=True)
+
+    # Relationships
+    api_config = relationship("ExternalAPIConfig", back_populates="sync_logs")
+    trigger_user = relationship("User")
 
 

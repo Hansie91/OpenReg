@@ -446,3 +446,35 @@ export const lineageAPI = {
     rebuildReport: (reportId: string) => api.post(`/lineage/report/${reportId}/rebuild`),
 };
 
+// External API Service (Regulatory Data Sync)
+export const externalAPIService = {
+    // Configurations
+    listConfigs: () => api.get('/external-api/configs'),
+    getConfig: (id: string) => api.get(`/external-api/configs/${id}`),
+    createConfig: (data: any) => api.post('/external-api/configs', data),
+    updateConfig: (id: string, data: any) => api.put(`/external-api/configs/${id}`, data),
+    deleteConfig: (id: string) => api.delete(`/external-api/configs/${id}`),
+    testConnection: (id: string) => api.post(`/external-api/configs/${id}/test`),
+
+    // Sync operations
+    triggerSync: (id: string, mode: string = 'differential') =>
+        api.post(`/external-api/configs/${id}/sync`, { mode }),
+    getSyncHistory: (id: string, limit: number = 20, offset: number = 0) =>
+        api.get(`/external-api/configs/${id}/sync-history`, { params: { limit, offset } }),
+    getSyncStatus: () => api.get('/external-api/sync-status'),
+
+    // Conflicts
+    listConflicts: () => api.get('/external-api/conflicts'),
+    resolveConflict: (entityType: string, entityId: string, resolution: string) =>
+        api.post(`/external-api/conflicts/${entityType}/${entityId}/resolve`, { resolution }),
+
+    // Import
+    importJSON: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/external-api/import', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+    },
+};
+
