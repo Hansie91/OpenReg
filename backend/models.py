@@ -155,6 +155,32 @@ class OutputFormat(str, enum.Enum):
     TXT = "txt"  # Fixed-width text
 
 
+class WebhookEventType(str, enum.Enum):
+    """Types of events that can trigger webhooks"""
+    JOB_STARTED = "job.started"
+    JOB_COMPLETED = "job.completed"
+    JOB_FAILED = "job.failed"
+    ARTIFACT_CREATED = "artifact.created"
+    DELIVERY_COMPLETED = "delivery.completed"
+    DELIVERY_FAILED = "delivery.failed"
+    VALIDATION_FAILED = "validation.failed"
+    WORKFLOW_STATE_CHANGED = "workflow.state_changed"
+
+
+class WebhookDeliveryStatus(str, enum.Enum):
+    """Status of webhook delivery attempts"""
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+    RETRYING = "retrying"
+
+
+class TenantEnvironment(str, enum.Enum):
+    """Tenant environment mode"""
+    PRODUCTION = "production"
+    SANDBOX = "sandbox"
+
+
 # === Base Mixin ===
 
 class TimestampMixin:
@@ -167,17 +193,26 @@ class TimestampMixin:
 
 class Tenant(Base, TimestampMixin):
     __tablename__ = "tenants"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)
     settings = Column(JSONB, default={})
     is_active = Column(Boolean, default=True, nullable=False)
-    
+
+    # Environment mode - sandbox vs production
+    environment = Column(
+        Enum(TenantEnvironment),
+        default=TenantEnvironment.SANDBOX,
+        nullable=False,
+        index=True
+    )
+
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="tenant", cascade="all, delete-orphan")
     connectors = relationship("Connector", back_populates="tenant", cascade="all, delete-orphan")
+    webhooks = relationship("Webhook", back_populates="tenant", cascade="all, delete-orphan")
 
 
 class User(Base, TimestampMixin):
@@ -1235,5 +1270,121 @@ class APIKey(Base, TimestampMixin):
     tenant = relationship("Tenant")
     creator = relationship("User", foreign_keys=[created_by])
     revoker = relationship("User", foreign_keys=[revoked_by])
+
+
+# === Webhooks ===
+
+class Webhook(Base, TimestampMixin):
+    """
+    Webhook configuration for event notifications.
+
+    Partners can register webhooks to receive real-time notifications
+    about job completions, failures, artifact creation, etc.
+
+    Security:
+    - All payloads are signed with HMAC-SHA256
+    - Secret is encrypted at rest
+    - Supports IP whitelisting
+    """
+    __tablename__ = "webhooks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    # Configuration
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(String(2048), nullable=False)  # Webhook endpoint URL
+
+    # Security
+    secret_encrypted = Column(LargeBinary, nullable=False)  # HMAC signing secret
+    allowed_ips = Column(JSONB, default=[])  # IP whitelist (empty = all)
+
+    # Event subscriptions - list of WebhookEventType values
+    events = Column(JSONB, nullable=False, default=[])
+
+    # Optional filtering
+    report_ids = Column(JSONB, default=[])  # Filter to specific reports (empty = all)
+
+    # Request configuration
+    headers = Column(JSONB, default={})  # Custom headers to include
+    timeout_seconds = Column(Integer, default=30, nullable=False)
+
+    # Retry policy
+    retry_policy = Column(JSONB, default={
+        "max_attempts": 5,
+        "backoff": "exponential",
+        "base_delay": 5,
+        "max_delay": 300
+    })
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Statistics
+    total_deliveries = Column(Integer, default=0, nullable=False)
+    successful_deliveries = Column(Integer, default=0, nullable=False)
+    failed_deliveries = Column(Integer, default=0, nullable=False)
+    last_triggered_at = Column(DateTime(timezone=True), nullable=True)
+    last_success_at = Column(DateTime(timezone=True), nullable=True)
+    last_failure_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="webhooks")
+    creator = relationship("User")
+    deliveries = relationship("WebhookDelivery", back_populates="webhook", cascade="all, delete-orphan")
+
+
+class WebhookDelivery(Base, TimestampMixin):
+    """
+    Record of a webhook delivery attempt.
+
+    Tracks each delivery attempt including request/response details
+    for debugging and audit purposes.
+    """
+    __tablename__ = "webhook_deliveries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    webhook_id = Column(UUID(as_uuid=True), ForeignKey("webhooks.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Event details
+    event_type = Column(Enum(WebhookEventType), nullable=False, index=True)
+    event_id = Column(String(64), nullable=False, unique=True, index=True)  # Idempotency key
+    payload = Column(JSONB, nullable=False)  # The webhook payload
+
+    # Related entities (for filtering/queries)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=True, index=True)
+    artifact_id = Column(UUID(as_uuid=True), ForeignKey("artifacts.id"), nullable=True)
+
+    # Delivery status
+    status = Column(Enum(WebhookDeliveryStatus), default=WebhookDeliveryStatus.PENDING, nullable=False, index=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    max_attempts = Column(Integer, default=5, nullable=False)
+
+    # Request details
+    request_url = Column(String(2048), nullable=False)
+    request_headers = Column(JSONB, default={})
+    request_timestamp = Column(DateTime(timezone=True), nullable=True)
+
+    # Response details
+    response_status_code = Column(Integer, nullable=True)
+    response_headers = Column(JSONB, default={})
+    response_body = Column(Text, nullable=True)  # Truncated to 10KB
+    response_timestamp = Column(DateTime(timezone=True), nullable=True)
+    response_time_ms = Column(Integer, nullable=True)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Completion
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    webhook = relationship("Webhook", back_populates="deliveries")
+    job_run = relationship("JobRun")
+    artifact = relationship("Artifact")
 
 

@@ -197,6 +197,30 @@ async def _execute_workflow_async(
                 job_run.error_message = metadata.get("error_message")
             db.commit()
 
+            # Emit webhook events for key state transitions
+            try:
+                from services.webhooks import WebhookEventEmitter
+
+                if to_state == WorkflowState.INITIALIZING and from_state == WorkflowState.PENDING:
+                    # Job started
+                    WebhookEventEmitter.emit_job_started(db, job_run, report)
+
+                elif to_state == WorkflowState.COMPLETED:
+                    # Job completed successfully - calculate duration
+                    duration_ms = None
+                    if job_run.started_at and job_run.ended_at:
+                        duration_ms = int((job_run.ended_at - job_run.started_at).total_seconds() * 1000)
+                    WebhookEventEmitter.emit_job_completed(db, job_run, report, duration_ms)
+
+                elif to_state == WorkflowState.FAILED:
+                    # Job failed
+                    WebhookEventEmitter.emit_job_failed(
+                        db, job_run, report,
+                        metadata.get("error_message")
+                    )
+            except Exception as webhook_err:
+                logger.warning(f"Failed to emit webhook event: {webhook_err}")
+
         async def on_step_complete(step_name, result):
             await _persist_step_state(
                 db,

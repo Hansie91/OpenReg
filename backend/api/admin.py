@@ -930,3 +930,107 @@ async def update_tenant_settings(
     )
 
 
+# === Tenant Environment Management ===
+
+class TenantEnvironmentResponse(BaseModel):
+    """Response for tenant environment."""
+    tenant_id: str
+    tenant_name: str
+    environment: str
+    updated_at: datetime
+
+
+class TenantEnvironmentUpdate(BaseModel):
+    """Request to update tenant environment."""
+    environment: str  # 'sandbox' or 'production'
+
+
+@router.get("/tenant/environment", response_model=TenantEnvironmentResponse)
+async def get_tenant_environment(
+    current_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current tenant environment mode.
+
+    Returns whether the tenant is in sandbox or production mode.
+    """
+    tenant = db.query(models.Tenant).filter(
+        models.Tenant.id == current_user.tenant_id
+    ).first()
+
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    return TenantEnvironmentResponse(
+        tenant_id=str(tenant.id),
+        tenant_name=tenant.name,
+        environment=tenant.environment.value if tenant.environment else "sandbox",
+        updated_at=tenant.updated_at
+    )
+
+
+@router.put("/tenant/environment", response_model=TenantEnvironmentResponse)
+async def update_tenant_environment(
+    update_data: TenantEnvironmentUpdate,
+    current_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Switch tenant between sandbox and production mode.
+
+    **Sandbox Mode:**
+    - Uses mock connectors that return sample data
+    - Simulates file delivery without actually sending
+    - Safe for testing and development
+
+    **Production Mode:**
+    - Uses real database connectors
+    - Actually delivers files to destinations
+    - Use only when ready for live operations
+
+    Requires admin privileges.
+    """
+    # Validate environment value
+    valid_environments = ["sandbox", "production"]
+    if update_data.environment not in valid_environments:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid environment. Must be one of: {valid_environments}"
+        )
+
+    tenant = db.query(models.Tenant).filter(
+        models.Tenant.id == current_user.tenant_id
+    ).first()
+
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    old_environment = tenant.environment.value if tenant.environment else "sandbox"
+
+    # Update environment
+    tenant.environment = models.TenantEnvironment(update_data.environment)
+    tenant.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(tenant)
+
+    # Audit log
+    log_audit(
+        db=db,
+        user=current_user,
+        action=models.AuditAction.UPDATE,
+        entity_type="tenant_environment",
+        entity_id=str(tenant.id),
+        changes={
+            "old_environment": old_environment,
+            "new_environment": update_data.environment
+        }
+    )
+
+    return TenantEnvironmentResponse(
+        tenant_id=str(tenant.id),
+        tenant_name=tenant.name,
+        environment=tenant.environment.value,
+        updated_at=tenant.updated_at
+    )
+

@@ -10,7 +10,7 @@ import redis
 
 from database import engine, Base, get_db
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks
 
 # Configure logging
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -221,6 +221,7 @@ app.include_router(xbrl.router, prefix=f"{API_PREFIX}/xbrl", tags=["XBRL Taxonom
 app.include_router(streaming.router, prefix=f"{API_PREFIX}", tags=["Streaming"])
 app.include_router(lineage.router, prefix=f"{API_PREFIX}/lineage", tags=["Data Lineage"])
 app.include_router(workflow.router, prefix=f"{API_PREFIX}/workflow", tags=["Workflow"])
+app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["Webhooks"])
 
 
 @app.get("/")
