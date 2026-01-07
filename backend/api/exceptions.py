@@ -377,8 +377,8 @@ def resubmit_exceptions(
         raise HTTPException(status_code=403, detail="Access denied")
     
     # Create supplemental job run
-    from worker import execute_report_task
-    
+    from tasks.workflow_tasks import execute_workflow_task
+
     supplemental_job_run = models.JobRun(
         tenant_id=original_job_run.tenant_id,
         report_version_id=original_job_run.report_version_id,
@@ -399,10 +399,10 @@ def resubmit_exceptions(
         exception.resubmitted_job_run_id = supplemental_job_run.id
     
     db.commit()
-    
-    # Trigger execution
-    execute_report_task.delay(str(supplemental_job_run.id))
-    
+
+    # Trigger execution using workflow state machine
+    execute_workflow_task.delay(str(supplemental_job_run.id))
+
     return ResubmitResponse(
         success=True,
         resubmitted_count=len(exceptions),

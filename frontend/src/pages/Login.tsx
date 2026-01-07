@@ -18,8 +18,8 @@ export default function Login() {
 
         try {
             const response = await authAPI.login(email, password);
-            const { access_token, user } = response.data;
-            login(access_token, user);
+            const { access_token, refresh_token, expires_in, user } = response.data;
+            login(access_token, refresh_token, expires_in, user);
             navigate('/');
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Login failed');

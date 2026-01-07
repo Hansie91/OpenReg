@@ -1,39 +1,129 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from pydantic import field_validator, model_validator
+from typing import List, Optional
 import os
+import warnings
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
-    
-    # Database
-    DATABASE_URL: str = "postgresql://openreg:openreg_dev_password@localhost:5432/openreg"
-    
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
-    
-    # MinIO / S3
-    MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
+    """
+    Application settings loaded from environment variables.
+
+    Security-sensitive settings MUST be provided via environment variables
+    in production. Development mode allows defaults but emits warnings.
+    """
+
+    # Environment - MUST be set explicitly
+    ENVIRONMENT: str = "development"
+
+    # Database - Required in production
+    DATABASE_URL: Optional[str] = None
+
+    # Redis - Required in production
+    REDIS_URL: Optional[str] = None
+
+    # MinIO / S3 - Required in production
+    MINIO_ENDPOINT: Optional[str] = None
+    MINIO_ACCESS_KEY: Optional[str] = None
+    MINIO_SECRET_KEY: Optional[str] = None
     MINIO_USE_SSL: bool = False
     ARTIFACT_BUCKET: str = "openreg-artifacts"
-    
-    # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+
+    # Security - NEVER use defaults in production
+    SECRET_KEY: Optional[str] = None
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
-    # Encryption (Fernet key for credential encryption)
-    ENCRYPTION_KEY: str = "SA3MG87YRp8ErWD-l7-tIQgMCM2kpD5fCl7F4VL3uB8="  # Valid 32-byte base64 key
-    
+
+    # JWT Claims - for token validation
+    JWT_ISSUER: str = "openreg"
+    JWT_AUDIENCE: str = "openreg-api"
+
+    # Encryption (Fernet key for credential encryption) - Required in production
+    ENCRYPTION_KEY: Optional[str] = None
+
     # Application
-    ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
-    
+
     # CORS - stored as comma-separated string from env
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+
+    # Development mode defaults (only used when ENVIRONMENT=development)
+    _DEV_DATABASE_URL: str = "postgresql://openreg:openreg_dev_password@localhost:5432/openreg"
+    _DEV_REDIS_URL: str = "redis://localhost:6379/0"
+    _DEV_MINIO_ENDPOINT: str = "localhost:9000"
+    _DEV_MINIO_ACCESS_KEY: str = "minioadmin"
+    _DEV_MINIO_SECRET_KEY: str = "minioadmin"
+    _DEV_SECRET_KEY: str = "dev-only-secret-key-do-not-use-in-production-32chars"
+    _DEV_ENCRYPTION_KEY: str = "SA3MG87YRp8ErWD-l7-tIQgMCM2kpD5fCl7F4VL3uB8="
+
+    @model_validator(mode='after')
+    def validate_and_apply_defaults(self):
+        """Validate required settings and apply development defaults if needed."""
+        is_production = self.ENVIRONMENT.lower() in ("production", "prod", "staging")
+        errors = []
+
+        # Required secrets for production
+        required_secrets = [
+            ("SECRET_KEY", "_DEV_SECRET_KEY"),
+            ("ENCRYPTION_KEY", "_DEV_ENCRYPTION_KEY"),
+            ("DATABASE_URL", "_DEV_DATABASE_URL"),
+            ("REDIS_URL", "_DEV_REDIS_URL"),
+            ("MINIO_ENDPOINT", "_DEV_MINIO_ENDPOINT"),
+            ("MINIO_ACCESS_KEY", "_DEV_MINIO_ACCESS_KEY"),
+            ("MINIO_SECRET_KEY", "_DEV_MINIO_SECRET_KEY"),
+        ]
+
+        for field_name, dev_default_name in required_secrets:
+            value = getattr(self, field_name)
+            dev_default = getattr(self, dev_default_name)
+
+            if value is None or value == "":
+                if is_production:
+                    errors.append(f"{field_name} must be set via environment in production")
+                else:
+                    # Apply development default and warn
+                    object.__setattr__(self, field_name, dev_default)
+                    warnings.warn(
+                        f"{field_name} not set, using development default. "
+                        f"Set {field_name} environment variable for production.",
+                        UserWarning,
+                        stacklevel=2
+                    )
+
+        # Validate SECRET_KEY strength in production
+        if is_production and self.SECRET_KEY:
+            if len(self.SECRET_KEY) < 32:
+                errors.append("SECRET_KEY must be at least 32 characters in production")
+            weak_patterns = ["your-secret", "change-me", "default", "secret-key", "password"]
+            if any(p in self.SECRET_KEY.lower() for p in weak_patterns):
+                errors.append("SECRET_KEY appears to be a weak/default value")
+
+        # Validate Fernet encryption key format
+        if self.ENCRYPTION_KEY:
+            import base64
+            try:
+                decoded = base64.urlsafe_b64decode(self.ENCRYPTION_KEY.encode())
+                if len(decoded) != 32:
+                    errors.append("ENCRYPTION_KEY must be a 32-byte base64-encoded Fernet key")
+            except Exception:
+                errors.append("ENCRYPTION_KEY is not a valid base64-encoded key")
+
+        if errors:
+            from core.exceptions import StartupValidationError
+            raise StartupValidationError(errors)
+
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production mode."""
+        return self.ENVIRONMENT.lower() in ("production", "prod", "staging")
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development mode."""
+        return not self.is_production
     
     @property
     def cors_origins_list(self) -> List[str]:

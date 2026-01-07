@@ -468,9 +468,9 @@ async def execute_report(
     db.commit()
     db.refresh(job_run)
     
-    # Enqueue to Celery for async execution
-    from worker import execute_report_task
-    execute_report_task.delay(str(job_run.id))
+    # Enqueue to Celery for async execution using workflow state machine
+    from tasks.workflow_tasks import execute_workflow_task
+    execute_workflow_task.delay(str(job_run.id))
     
     # Audit log
     log_audit(db, current_user, models.AuditAction.EXECUTE, "Report", str(report.id),

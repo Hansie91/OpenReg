@@ -1,5 +1,8 @@
 """
 Celery worker for asynchronous job execution
+
+This module defines the Celery application and registers tasks.
+Report execution uses a workflow state machine for tracking progress.
 """
 
 from celery import Celery
@@ -28,12 +31,24 @@ app.conf.update(
     worker_max_memory_per_child=settings.WORKER_MAX_MEMORY_MB * 1024  # Convert to KB
 )
 
+# Autodiscover tasks from the tasks package
+# This registers workflow_tasks and step_tasks with Celery
+app.autodiscover_tasks(['tasks'])
+
 
 @app.task(name="execute_report")
 def execute_report_task(job_run_id: str):
     """
-    Execute a report generation job.
-    
+    Execute a report generation job (legacy implementation).
+
+    NOTE: This is the legacy monolithic implementation. For new executions,
+    use execute_workflow_task from tasks.workflow_tasks which provides:
+    - State machine with explicit workflow states
+    - Real-time progress tracking
+    - Per-step retry with configurable backoff
+    - Workflow cancellation support
+    - Detailed step-by-step execution history
+
     Full execution pipeline with validation:
     1. Fetch data from connectors
     2. Run pre-generation validations

@@ -1049,30 +1049,191 @@ class LineageNode(Base, TimestampMixin):
 class LineageEdge(Base, TimestampMixin):
     """
     Represents a data flow relationship between two lineage nodes.
-    
+
     Edges capture how data flows from sources through transformations to outputs.
     """
     __tablename__ = "lineage_edges"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     source_node_id = Column(UUID(as_uuid=True), ForeignKey("lineage_nodes.id"), nullable=False, index=True)
     target_node_id = Column(UUID(as_uuid=True), ForeignKey("lineage_nodes.id"), nullable=False, index=True)
     relationship_type = Column(Enum(LineageRelationshipType), nullable=False)
-    
+
     # Optional label for display
     label = Column(String(100), nullable=True)
-    
+
     # Phase 2: Field-level lineage placeholders
     source_fields = Column(JSONB, nullable=True)  # ["column1", "column2"]
     target_fields = Column(JSONB, nullable=True)  # ["field1", "field2"]
     transformation = Column(Text, nullable=True)  # Description of transformation
-    
+
     # Extended metadata
     edge_metadata = Column(JSONB, default={})
-    
+
     # Relationships
     source_node = relationship("LineageNode", foreign_keys=[source_node_id], back_populates="outgoing_edges")
     target_node = relationship("LineageNode", foreign_keys=[target_node_id], back_populates="incoming_edges")
+
+
+# === API Keys for Partner Authentication ===
+
+class WorkflowStateEnum(str, enum.Enum):
+    """States in the workflow execution."""
+    PENDING = "pending"
+    INITIALIZING = "initializing"
+    FETCHING_DATA = "fetching_data"
+    PRE_VALIDATION = "pre_validation"
+    TRANSFORMING = "transforming"
+    POST_VALIDATION = "post_validation"
+    GENERATING_ARTIFACTS = "generating_artifacts"
+    DELIVERING = "delivering"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    WAITING_RETRY = "waiting_retry"
+    PAUSED = "paused"
+
+
+class StepStatusEnum(str, enum.Enum):
+    """Status of a workflow step."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    RETRYING = "retrying"
+
+
+class WorkflowExecution(Base, TimestampMixin):
+    """
+    Tracks the execution of a workflow for a job run.
+
+    Provides granular progress tracking and state history
+    for real-time monitoring of report execution.
+    """
+    __tablename__ = "workflow_executions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, unique=True, index=True)
+    workflow_name = Column(String(100), nullable=False)
+    workflow_version = Column(String(20), nullable=False)
+
+    # Current state
+    current_state = Column(Enum(WorkflowStateEnum), default=WorkflowStateEnum.PENDING, nullable=False, index=True)
+    progress_percentage = Column(Integer, default=0, nullable=False)
+
+    # Timing
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+    # Error info
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String(50), nullable=True)
+    failed_step = Column(String(100), nullable=True)
+
+    # Context snapshot (for debugging/audit)
+    context_snapshot = Column(JSONB, nullable=True)
+
+    # State history (denormalized for quick access)
+    state_history = Column(JSONB, default=[])
+
+    # Relationships
+    job_run = relationship("JobRun", backref="workflow_execution", uselist=False)
+    steps = relationship("WorkflowStep", back_populates="workflow_execution", cascade="all, delete-orphan")
+
+
+class WorkflowStep(Base, TimestampMixin):
+    """
+    Tracks individual step execution within a workflow.
+
+    Each step has its own status, timing, and retry information.
+    """
+    __tablename__ = "workflow_steps"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workflow_execution_id = Column(UUID(as_uuid=True), ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_name = Column(String(100), nullable=False)
+    step_order = Column(Integer, nullable=False)
+
+    # Status
+    status = Column(Enum(StepStatusEnum), default=StepStatusEnum.PENDING, nullable=False, index=True)
+
+    # Timing
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+    # Retry info
+    attempt_count = Column(Integer, default=0, nullable=False)
+    max_attempts = Column(Integer, default=3, nullable=False)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Error info
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String(50), nullable=True)
+
+    # Output/metadata
+    output = Column(JSONB, nullable=True)
+    step_metadata = Column(JSONB, nullable=True)
+
+    # Relationships
+    workflow_execution = relationship("WorkflowExecution", back_populates="steps")
+
+    __table_args__ = (
+        # Ensure step_order is unique within a workflow execution
+        # Index for efficient ordering queries
+    )
+
+
+class APIKey(Base, TimestampMixin):
+    """
+    API key for programmatic/partner authentication.
+
+    API keys provide an alternative to JWT tokens for M2M integrations.
+    Keys are permission-scoped, rate-limited, and support IP whitelisting.
+
+    Security notes:
+    - Only the SHA-256 hash of the key is stored
+    - The plain key is shown only once at creation
+    - Keys can be revoked immediately via is_active flag
+    """
+    __tablename__ = "api_keys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    # Key identification
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    key_hash = Column(String(64), nullable=False, unique=True, index=True)  # SHA-256
+    key_prefix = Column(String(16), nullable=False)  # First chars for identification
+
+    # Access control
+    permissions = Column(JSONB, default=[])  # List of permission strings
+    allowed_ips = Column(JSONB, default=[])  # IP whitelist (empty = all allowed)
+
+    # Rate limiting
+    rate_limit_per_minute = Column(Integer, default=60, nullable=False)
+
+    # Lifecycle
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Usage tracking
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    use_count = Column(Integer, default=0, nullable=False)
+
+    # Revocation tracking
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    creator = relationship("User", foreign_keys=[created_by])
+    revoker = relationship("User", foreign_keys=[revoked_by])
 
 
