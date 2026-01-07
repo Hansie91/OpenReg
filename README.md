@@ -23,7 +23,7 @@
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-key-features">Features</a> •
   <a href="#-architecture">Architecture</a> •
-  <a href="#-documentation">Documentation</a> •
+  <a href="#-api-documentation">API</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -33,7 +33,7 @@
 
 **OpenReg** is a self-hosted, open-source regulatory reporting platform designed for financial institutions, trading firms, and compliance teams. It provides end-to-end automation for generating, validating, and delivering regulatory reports across multiple jurisdictions.
 
-Built for production environments, OpenReg offers a modern web interface, robust security controls, and the flexibility to handle complex reporting requirements—from simple data transformations to sophisticated multi-source aggregations.
+Built for production environments, OpenReg offers a modern web interface, robust security controls, partner API integration, and the flexibility to handle complex reporting requirements—from simple data transformations to sophisticated multi-source aggregations.
 
 ### Why OpenReg?
 
@@ -44,7 +44,8 @@ Built for production environments, OpenReg offers a modern web interface, robust
 | Multiple data sources and formats | Universal database connectivity with flexible output formats |
 | Compliance audit requirements | Full audit trail with user attribution and version history |
 | Complex validation requirements | Rule engine with blocking/warning validations and exception management |
-| Delivery to regulators | Automated SFTP/FTP delivery with acknowledgment tracking |
+| Delivery to regulators | Automated SFTP/FTP delivery with retry and acknowledgment tracking |
+| Partner integration needs | Full-featured REST API with webhooks and real-time status |
 
 ---
 
@@ -116,6 +117,16 @@ docker-compose exec backend python init_db.py
 </tr>
 </table>
 
+### Workflow Engine
+
+OpenReg features a state machine-based workflow engine for reliable report execution:
+
+- **Explicit States** — PENDING → INITIALIZING → FETCHING_DATA → PRE_VALIDATION → TRANSFORMING → POST_VALIDATION → GENERATING_ARTIFACTS → DELIVERING → COMPLETED
+- **Real-time Progress** — Track execution progress (0-100%) with step-by-step updates
+- **Automatic Retry** — Configurable retry policies with exponential/linear backoff
+- **Cancellation Support** — Cancel running workflows gracefully
+- **Execution History** — Full state transition audit trail
+
 ### Execution & Scheduling
 
 - **Manual Execution** — Run reports on-demand with custom date ranges
@@ -130,6 +141,31 @@ docker-compose exec backend python init_db.py
 - **Exception queue** — Review, correct, and resubmit failed records
 - **Validation severity levels** — Blocking, warning, and correctable rules
 
+### Partner API & Webhooks
+
+<table>
+<tr>
+<td width="50%">
+
+**REST API**
+- Full-featured API for all operations
+- API key authentication with scoped permissions
+- Rate limiting (configurable per key tier)
+- OpenAPI 3.0 documentation
+
+</td>
+<td width="50%">
+
+**Webhooks**
+- Real-time event notifications
+- HMAC-SHA256 signed payloads
+- Configurable retry with backoff
+- Events: job.started, job.completed, job.failed, artifact.created, validation.failed
+
+</td>
+</tr>
+</table>
+
 ### Data Connectivity
 
 | Database | Status | Notes |
@@ -142,11 +178,25 @@ docker-compose exec backend python init_db.py
 
 ### Security & Compliance
 
-- **Role-Based Access Control** — Granular permissions for users and teams
-- **Credential Encryption** — AES-256 encryption for all stored secrets
-- **Audit Logging** — Comprehensive trail of all actions and changes
-- **JWT Authentication** — Secure, stateless authentication
-- **Multi-Tenant Architecture** — PostgreSQL Row-Level Security for data isolation
+| Feature | Description |
+|---------|-------------|
+| **JWT Authentication** | Access + refresh tokens with configurable expiry, issuer/audience claims |
+| **API Key Auth** | Alternative authentication for M2M integrations |
+| **Token Revocation** | Server-side logout with Redis-backed token store |
+| **Role-Based Access** | 50+ granular permissions with wildcard support |
+| **Multi-Tenant** | Row-level tenant isolation with automatic filtering |
+| **Credential Encryption** | AES-256 (Fernet) encryption for all stored secrets |
+| **Audit Logging** | Comprehensive trail with 25+ event types |
+| **Rate Limiting** | Redis-backed rate limiting with tier-based limits |
+| **Query Safety** | Timeout enforcement, row limits, SQL injection detection |
+
+### Sandbox Mode
+
+Test your integrations safely before going live:
+
+- **Mock Connectors** — Generate sample data without real database connections
+- **Simulated Delivery** — Test SFTP/FTP delivery without actually sending files
+- **Environment Toggle** — Switch between sandbox and production via API
 
 ---
 
@@ -168,6 +218,8 @@ docker-compose exec backend python init_db.py
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │                    FastAPI Backend                          │  │
 │  │         (Python 3.11, SQLAlchemy, Pydantic)                │  │
+│  │                                                             │  │
+│  │  Middleware: Request Tracking • Rate Limiting • CORS       │  │
 │  └─────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────┘
          │                      │                      │
@@ -177,8 +229,9 @@ docker-compose exec backend python init_db.py
 │   (Metadata)    │   │   (Job Queue)   │   │   (Artifacts)   │
 │                 │   │                 │   │                 │
 │  • Reports      │   │  • Task Queue   │   │  • Report Files │
-│  • Versions     │   │  • Scheduling   │   │  • Audit Logs   │
-│  • Audit Logs   │   │  • Caching      │   │  • Backups      │
+│  • Versions     │   │  • Rate Limits  │   │  • Audit Logs   │
+│  • Audit Logs   │   │  • Token Store  │   │  • Backups      │
+│  • Webhooks     │   │  • Caching      │   │                 │
 └─────────────────┘   └────────┬────────┘   └─────────────────┘
                                │
                                ▼
@@ -186,11 +239,11 @@ docker-compose exec backend python init_db.py
 │                      WORKER LAYER                                 │
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │                   Celery Workers                            │  │
-│  │        (Report Execution, Delivery, Scheduling)            │  │
+│  │        (Workflow Engine, Delivery, Webhooks)               │  │
 │  │                                                             │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │  │
-│  │  │  Executor   │  │  Validator  │  │  Delivery   │         │  │
-│  │  │  (Python)   │  │  (Rules)    │  │  (SFTP/FTP) │         │  │
+│  │  │  Workflow   │  │  Validator  │  │  Webhook    │         │  │
+│  │  │  Executor   │  │  Engine     │  │  Delivery   │         │  │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘         │  │
 │  └─────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────┘
@@ -206,6 +259,45 @@ docker-compose exec backend python init_db.py
 | **Queue** | Celery + Redis | Distributed task execution |
 | **Storage** | MinIO (S3-compatible) | Report artifacts and files |
 | **Execution** | RestrictedPython | Secure sandboxed code execution |
+| **Logging** | structlog | Structured JSON logging |
+
+---
+
+## 📡 API Documentation
+
+OpenReg provides a comprehensive REST API for all operations.
+
+### Authentication
+
+```bash
+# JWT Authentication
+curl -X POST /api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "secret"}'
+
+# API Key Authentication
+curl -X GET /api/v1/reports \
+  -H "X-API-Key: your_api_key_here"
+```
+
+### Key Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/auth/login` | Authenticate and get tokens |
+| `POST /api/v1/auth/refresh` | Refresh access token |
+| `GET /api/v1/reports` | List reports |
+| `POST /api/v1/reports/{id}/execute` | Execute a report |
+| `GET /api/v1/workflow/runs/{id}/workflow` | Get workflow status |
+| `POST /api/v1/webhooks` | Register a webhook |
+| `GET /api/v1/api-keys` | List API keys |
+| `PUT /api/v1/admin/tenant/environment` | Switch sandbox/production |
+
+### Interactive Documentation
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI JSON**: http://localhost:8000/api/v1/openapi.json
 
 ---
 
@@ -228,21 +320,46 @@ OpenReg supports multiple regulatory reporting frameworks with active developmen
 | **UK EMIR** | United Kingdom | 🔄 In Development |
 | **CFTC Rewrite** | United States | 📋 Planned |
 | **SEC Reporting** | United States | 📋 Planned |
-| **ASIC** | Australia | 📋 Planned |
-| **MAS** | Singapore | 📋 Planned |
-| **JFSA** | Japan | 📋 Planned |
 
 ---
 
-## 📖 Documentation
+## 📋 Roadmap
 
-| Document | Description |
-|----------|-------------|
-| [Architecture Guide](docs/ARCHITECTURE.md) | System design and component interaction |
-| [Security Model](docs/SECURITY.md) | Security controls and hardening guide |
-| [Deployment Guide](docs/DEPLOYMENT.md) | Production deployment with Kubernetes |
-| [API Reference](http://localhost:8000/docs) | Interactive OpenAPI documentation |
-| [User Guide](docs/USER_GUIDE.md) | End-user documentation |
+### ✅ v0.1 — Foundation (Completed)
+- Web portal with authentication and RBAC
+- Report management with semantic versioning
+- Database connector configuration
+- Report execution pipeline
+- Multi-format output (XML, JSON, CSV, TXT)
+- Validation engine with exception queue
+
+### ✅ v0.2 — Automation & Security (Completed)
+- Enhanced JWT with issuer/audience claims
+- Token revocation with Redis-backed store
+- API key authentication for partners
+- Granular permission system (50+ permissions)
+- Workflow state machine with progress tracking
+- Real-time execution status API
+- SFTP/FTP delivery with retry policies
+
+### ✅ v0.3 — Partner API & Observability (Completed)
+- Webhook system with HMAC-SHA256 signing
+- Sandbox mode for safe testing
+- Tenant environment management
+- Structured logging (structlog)
+- Request ID tracking and correlation
+- Rate limiting with Redis backend
+- Comprehensive audit event system
+- Query safety (timeouts, row limits, injection detection)
+
+### 📋 v1.0 — Enterprise (Planned)
+- Approval workflows for report changes
+- External authentication (OIDC/SAML)
+- Kubernetes/Helm deployment charts
+- Prometheus metrics and Grafana dashboards
+- OpenTelemetry distributed tracing
+- Data lineage visualization
+- Advanced scheduling with dependencies
 
 ---
 
@@ -288,31 +405,6 @@ cd frontend && npm run lint
 
 ---
 
-## 📋 Roadmap
-
-### ✅ v0.1 — Foundation (Completed)
-- Web portal with authentication and RBAC
-- Report management with semantic versioning
-- Database connector configuration
-- Report execution pipeline
-- Multi-format output (XML, JSON, CSV, TXT)
-- Validation engine with exception queue
-
-### 🔄 v0.2 — Automation (In Progress)
-- Schedule management (cron + calendar)
-- SFTP/FTP delivery automation
-- Real-time execution logging
-- Enhanced monitoring dashboard
-
-### 📋 v1.0 — Enterprise (Planned)
-- Multi-tenant data isolation (PostgreSQL RLS)
-- Approval workflows for report changes
-- External authentication (OIDC/SAML)
-- Kubernetes/Helm deployment
-- Observability (Prometheus, OpenTelemetry)
-
----
-
 ## 🤝 Contributing
 
 We welcome contributions from the community! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a pull request.
@@ -349,12 +441,18 @@ See [LICENSE](LICENSE) for the full license text.
 
 Security is a top priority for OpenReg. Key security features include:
 
-- **Encryption at Rest** — AES-256 encryption for credentials and sensitive data
-- **Encryption in Transit** — TLS 1.3 for all network communication
-- **Authentication** — JWT-based with configurable session timeouts
-- **Authorization** — Role-based access control with granular permissions
-- **Audit Trail** — Immutable logging of all user actions
-- **Code Sandboxing** — RestrictedPython with allowlisted libraries only
+| Feature | Implementation |
+|---------|----------------|
+| **Authentication** | JWT with access/refresh tokens, API keys for M2M |
+| **Token Security** | Redis-backed revocation, configurable expiry, issuer/audience validation |
+| **Authorization** | Role-based with 50+ granular permissions, wildcard support |
+| **Multi-Tenancy** | Automatic row-level tenant isolation |
+| **Encryption at Rest** | AES-256 (Fernet) for credentials and secrets |
+| **Encryption in Transit** | TLS 1.3 for all network communication |
+| **Audit Trail** | 25+ event types with full request context |
+| **Rate Limiting** | Redis-backed with configurable limits per tier |
+| **Code Sandboxing** | RestrictedPython with allowlisted libraries only |
+| **Query Safety** | Timeout enforcement, row limits, SQL injection detection |
 
 ### Reporting Vulnerabilities
 
@@ -378,7 +476,10 @@ OpenReg is built on the shoulders of these excellent open-source projects:
 - [React](https://react.dev/) — User interface library
 - [PostgreSQL](https://www.postgresql.org/) — Relational database
 - [Celery](https://docs.celeryproject.org/) — Distributed task queue
+- [Redis](https://redis.io/) — In-memory data store
 - [MinIO](https://min.io/) — S3-compatible object storage
+- [structlog](https://www.structlog.org/) — Structured logging
+- [SlowAPI](https://github.com/laurentS/slowapi) — Rate limiting
 - [RestrictedPython](https://restrictedpython.readthedocs.io/) — Secure code execution
 
 ---
@@ -386,5 +487,5 @@ OpenReg is built on the shoulders of these excellent open-source projects:
 <p align="center">
   <strong>Built for the regulatory reporting community</strong>
   <br>
-  <sub>© 2024 OpenReg Contributors. Licensed under Apache 2.0.</sub>
+  <sub>© 2024-2025 OpenReg Contributors. Licensed under Apache 2.0.</sub>
 </p>
