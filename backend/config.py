@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Application
     LOG_LEVEL: str = "INFO"
 
+    # Rate limiting
+    RATE_LIMIT_PER_MINUTE: int = 60  # Default requests per minute
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 5  # Auth endpoints (stricter)
+    RATE_LIMIT_HEAVY_PER_MINUTE: int = 10  # Heavy operations
+
     # CORS - stored as comma-separated string from env
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 

@@ -4,7 +4,6 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-import logging
 import time
 import redis
 
@@ -12,9 +11,13 @@ from database import engine, Base, get_db
 from config import settings
 from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks
 
-# Configure logging
-logging.basicConfig(level=settings.LOG_LEVEL)
-logger = logging.getLogger(__name__)
+# Configure structured logging
+from core.logging import configure_logging, get_logger
+configure_logging(
+    json_format=settings.ENVIRONMENT == "production",
+    log_level=settings.LOG_LEVEL
+)
+logger = get_logger(__name__)
 
 
 def check_database_connection() -> tuple[bool, str]:
@@ -130,6 +133,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request context middleware (request ID tracking, logging)
+from middleware.request_context import RequestContextMiddleware
+app.add_middleware(RequestContextMiddleware, exclude_paths=["/health", "/ready", "/docs", "/redoc", "/openapi.json"])
+
+# Rate limiting middleware
+from middleware.rate_limit import RateLimitMiddleware
+RateLimitMiddleware(app)
 
 # Health check endpoint (liveness probe)
 @app.get("/health")
