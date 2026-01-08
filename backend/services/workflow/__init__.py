@@ -18,6 +18,7 @@ from .definitions import (
     WorkflowStep,
     WorkflowDefinition,
     StepResult,
+    WorkflowExecutionContext,
     REPORT_WORKFLOW,
 )
 from .executor import (
@@ -35,6 +36,7 @@ __all__ = [
     "WorkflowStep",
     "WorkflowDefinition",
     "StepResult",
+    "WorkflowExecutionContext",
     "REPORT_WORKFLOW",
     # Executor
     "WorkflowExecutor",

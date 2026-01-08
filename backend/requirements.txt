@@ -58,6 +58,9 @@ croniter==2.0.1
 # Validation
 jsonschema==4.21.1
 
+# Rate Limiting
+slowapi==0.1.9
+
 # Monitoring & Logging
 structlog==24.1.0
 

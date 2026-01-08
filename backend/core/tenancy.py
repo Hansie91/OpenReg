@@ -197,15 +197,32 @@ def _get_current_user_dependency():
     return Depends(get_current_user)
 
 
-# Actual dependency with proper injection
-from services.auth import get_current_user
+# Note: get_current_user is imported lazily inside the function
+# to avoid circular imports (services.auth imports from core.security,
+# and core.__init__ would import this module)
 
-async def get_tenant_db_impl(
-    current_user: models.User = Depends(get_current_user)
+async def get_tenant_db(
+    current_user = None  # Will be injected by FastAPI
 ) -> Generator[TenantScopedSession, None, None]:
     """
-    Actual implementation of tenant-scoped DB dependency.
+    FastAPI dependency that provides a tenant-scoped database session.
+
+    The tenant_id is extracted from the authenticated user's tenant.
+    All queries using this session are automatically filtered by tenant.
+
+    Usage:
+        @router.get("/items")
+        async def list_items(db: Session = Depends(get_tenant_db)):
+            # Automatically filtered by user's tenant
+            return db.query(Item).all()
     """
+    # Import here to avoid circular import
+    from services.auth import get_current_user as get_user_fn
+
+    # If current_user not injected, this is being called incorrectly
+    if current_user is None:
+        raise RuntimeError("get_tenant_db must be used with Depends()")
+
     tenant_id = str(current_user.tenant_id)
     db = create_tenant_session(tenant_id)
 
@@ -216,8 +233,43 @@ async def get_tenant_db_impl(
             db.close()
 
 
-# Export the actual dependency
-get_tenant_db = get_tenant_db_impl
+# Create the actual dependency with proper injection
+def _make_tenant_db_dependency():
+    """Factory to create the dependency with lazy import."""
+    from services.auth import get_current_user
+
+    async def _tenant_db_impl(
+        current_user: models.User = Depends(get_current_user)
+    ) -> Generator[TenantScopedSession, None, None]:
+        tenant_id = str(current_user.tenant_id)
+        db = create_tenant_session(tenant_id)
+
+        with TenantContext(tenant_id):
+            try:
+                yield db
+            finally:
+                db.close()
+
+    return _tenant_db_impl
+
+
+# This will be lazily initialized
+_tenant_db_dep = None
+
+
+def get_tenant_db_dep():
+    """
+    Get the tenant DB dependency for use with Depends().
+
+    Usage:
+        @router.get("/items")
+        async def list_items(db: Session = Depends(get_tenant_db_dep())):
+            return db.query(Item).all()
+    """
+    global _tenant_db_dep
+    if _tenant_db_dep is None:
+        _tenant_db_dep = _make_tenant_db_dependency()
+    return _tenant_db_dep
 
 
 def require_tenant_match(
