@@ -72,3 +72,8 @@ pytest==7.4.4
 pytest-asyncio==0.23.3
 pytest-cov==4.1.0
 httpx==0.26.0  # for testing
+
+# SBOM and License Tools
+cyclonedx-bom>=4.0.0
+pip-licenses>=4.0.0
+liccheck>=0.9.0
