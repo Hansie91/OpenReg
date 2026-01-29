@@ -5,6 +5,7 @@ import Editor from '@monaco-editor/react';
 import ReportWizard from '../components/ReportWizard';
 import LineageGraph from '../components/LineageGraph';
 import LineageSidePanel from '../components/LineageSidePanel';
+import TemplateCatalog from '../components/TemplateCatalog';
 import FieldMappingEditor from '../components/FieldMappingEditor';
 import ValidationRuleSelector from '../components/ValidationRuleSelector';
 
@@ -209,6 +210,7 @@ function LineageGraphWrapper({ reportId, onEdgeClick }: { reportId: string, onEd
 
 export default function Reports() {
     const queryClient = useQueryClient();
+    const [activeTab, setActiveTab] = useState<'reports' | 'templates'>('reports');
     const [showWizard, setShowWizard] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
@@ -552,7 +554,7 @@ export default function Reports() {
     return (
         <div className="animate-fade-in">
             {/* Page Header */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="page-title">Reports</h1>
                     <p className="page-description">
@@ -565,8 +567,44 @@ export default function Reports() {
                 </button>
             </div>
 
-            {/* Reports Table */}
-            {isLoading ? (
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 mb-6">
+                <button
+                    onClick={() => setActiveTab('reports')}
+                    className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'reports'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-gray-500 border-transparent hover:text-gray-700'
+                    }`}
+                >
+                    My Reports
+                </button>
+                <button
+                    onClick={() => setActiveTab('templates')}
+                    className={`px-4 py-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'templates'
+                            ? 'text-indigo-600 border-indigo-600'
+                            : 'text-gray-500 border-transparent hover:text-gray-700'
+                    }`}
+                >
+                    Templates
+                </button>
+            </div>
+
+            {/* Templates Tab Content */}
+            {activeTab === 'templates' && (
+                <div className="card p-6">
+                    <TemplateCatalog onImportSuccess={() => {
+                        // Switch to reports tab and refresh
+                        setActiveTab('reports');
+                        queryClient.invalidateQueries('reports');
+                    }} />
+                </div>
+            )}
+
+            {/* Reports Tab Content */}
+            {activeTab === 'reports' && (
+            isLoading ? (
                 <div className="card p-12 text-center">
                     <div className="spinner mx-auto text-indigo-600"></div>
                     <p className="mt-3 text-sm text-gray-500">Loading reports...</p>
@@ -657,6 +695,7 @@ export default function Reports() {
                         <span className="ml-2">Create Report</span>
                     </button>
                 </div>
+            )
             )}
 
             {/* Create Report Modal */}

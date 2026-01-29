@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { reportsAPI, connectorsAPI, schemasAPI } from '../services/api';
+import TemplateCatalog from './TemplateCatalog';
 
 interface WizardProps {
     isOpen: boolean;
@@ -88,6 +89,11 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
         </svg>
     ),
+    Template: () => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+        </svg>
+    ),
 };
 
 const STEPS = [
@@ -104,7 +110,7 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
     const [currentStep, setCurrentStep] = useState(1);
 
     // Form state
-    const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
+    const [mode, setMode] = useState<'simple' | 'advanced' | 'template'>('simple');
     const [reportName, setReportName] = useState('');
     const [reportDescription, setReportDescription] = useState('');
     const [connectorId, setConnectorId] = useState('');
@@ -235,6 +241,10 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
     };
 
     const getStepsForMode = () => {
+        if (mode === 'template') {
+            // Template mode shows catalog after mode selection (step 1 only)
+            return STEPS.filter(s => [1].includes(s.id));
+        }
         if (mode === 'advanced') {
             return STEPS.filter(s => [1, 2, 6].includes(s.id));
         }
@@ -311,11 +321,32 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                 <div className="flex-1 overflow-auto p-6">
                     {/* Step 1: Mode Selection */}
                     {currentStep === 1 && (
-                        <div className="max-w-2xl mx-auto">
+                        <div className="max-w-4xl mx-auto">
                             <h3 className="text-lg font-medium text-gray-900 mb-6 text-center">
                                 Choose how you want to create your report
                             </h3>
-                            <div className="grid grid-cols-2 gap-6">
+                            <div className="grid grid-cols-3 gap-6">
+                                <button
+                                    onClick={() => setMode('template')}
+                                    className={`p-6 rounded-xl border-2 transition-all text-left ${mode === 'template'
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-gray-300'
+                                        }`}
+                                >
+                                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${mode === 'template' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'
+                                        }`}>
+                                        <Icons.Template />
+                                    </div>
+                                    <h4 className="font-semibold text-gray-900 mb-2">Start from Template</h4>
+                                    <p className="text-sm text-gray-600">
+                                        Import a pre-built MiFIR, EMIR, or SFTR template with ready-to-use field mappings.
+                                    </p>
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                        <span className="badge badge-success">Quick Start</span>
+                                        <span className="badge badge-info">Pre-configured</span>
+                                    </div>
+                                </button>
+
                                 <button
                                     onClick={() => setMode('simple')}
                                     className={`p-6 rounded-xl border-2 transition-all text-left ${mode === 'simple'
@@ -358,6 +389,19 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                                     </div>
                                 </button>
                             </div>
+
+                            {/* Show TemplateCatalog when template mode selected */}
+                            {mode === 'template' && (
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                                        Select a Template
+                                    </h3>
+                                    <TemplateCatalog onImportSuccess={() => {
+                                        onSuccess();
+                                        handleClose();
+                                    }} />
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -644,23 +688,26 @@ export default function ReportWizard({ isOpen, onClose, onSuccess }: WizardProps
                     </button>
 
                     <div className="flex items-center gap-3">
-                        {currentStep === visibleSteps[visibleSteps.length - 1].id ? (
-                            <button
-                                onClick={() => createMutation.mutate()}
-                                disabled={createMutation.isLoading}
-                                className="btn btn-primary"
-                            >
-                                {createMutation.isLoading ? 'Creating...' : 'Create Report'}
-                            </button>
-                        ) : (
-                            <button
-                                onClick={goNext}
-                                disabled={!canProceed()}
-                                className="btn btn-primary"
-                            >
-                                <span className="mr-1">Next</span>
-                                <Icons.ChevronRight />
-                            </button>
+                        {/* Hide Next/Create button when template mode is selected (import happens in catalog) */}
+                        {mode !== 'template' && (
+                            currentStep === visibleSteps[visibleSteps.length - 1].id ? (
+                                <button
+                                    onClick={() => createMutation.mutate()}
+                                    disabled={createMutation.isLoading}
+                                    className="btn btn-primary"
+                                >
+                                    {createMutation.isLoading ? 'Creating...' : 'Create Report'}
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={goNext}
+                                    disabled={!canProceed()}
+                                    className="btn btn-primary"
+                                >
+                                    <span className="mr-1">Next</span>
+                                    <Icons.ChevronRight />
+                                </button>
+                            )
                         )}
                     </div>
                 </div>
