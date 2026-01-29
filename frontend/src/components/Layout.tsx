@@ -1,6 +1,8 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useState } from 'react';
+import { ErrorBoundary } from './ErrorBoundary';
+import { ToastContainer } from './Toast/ToastContainer';
 
 // Icon components for sidebar
 const Icons = {
@@ -60,11 +62,6 @@ const Icons = {
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
         </svg>
     ),
-    Chevron: () => (
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-        </svg>
-    ),
     Schemas: () => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
@@ -97,7 +94,7 @@ const navigation = [
 ];
 
 const adminNavigation = [
-    { name: 'External API', href: '/external-api', icon: Icons.ExternalAPI },
+    { name: 'Connect API', href: '/external-api', icon: Icons.ExternalAPI },
     { name: 'Admin', href: '/admin', icon: Icons.Admin },
 ];
 
@@ -107,30 +104,42 @@ export default function Layout() {
     const [collapsed, setCollapsed] = useState(false);
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-white">
             {/* Sidebar */}
-            <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <aside
+                className={`fixed left-0 top-0 h-full bg-slate-900 flex flex-col z-40 transition-all duration-200 ${
+                    collapsed ? 'w-16' : 'w-56'
+                }`}
+            >
                 {/* Logo */}
-                <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+                <div className="h-14 px-4 flex items-center justify-between border-b border-slate-800">
                     {!collapsed && (
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                                <span className="text-white font-bold text-sm">OR</span>
-                            </div>
-                            <span className="font-semibold text-gray-900">OpenRegReport</span>
+                            <span className="text-base font-semibold text-white">OpenReg</span>
                         </div>
                     )}
                     <button
                         onClick={() => setCollapsed(!collapsed)}
-                        className={`p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-all ${collapsed ? 'mx-auto rotate-180' : ''}`}
+                        className={`p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ${
+                            collapsed ? 'mx-auto' : ''
+                        }`}
                     >
-                        <Icons.Chevron />
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2}
+                            stroke="currentColor"
+                            className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`}
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                        </svg>
                     </button>
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-4 overflow-y-auto">
-                    <div className="space-y-1">
+                <nav className="flex-1 py-3 overflow-y-auto">
+                    <div className="space-y-0.5">
                         {navigation.map((item) => {
                             const isActive = location.pathname === item.href;
                             const Icon = item.icon;
@@ -138,10 +147,16 @@ export default function Layout() {
                                 <Link
                                     key={item.name}
                                     to={item.href}
-                                    className={`sidebar-link ${isActive ? 'active' : ''} ${collapsed ? 'justify-center px-2' : ''}`}
+                                    className={`flex items-center gap-2.5 mx-2 px-2.5 py-2 text-xs font-medium rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-slate-800 text-white border-l-2 border-blue-400'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                    } ${collapsed ? 'justify-center px-2' : ''}`}
                                     title={collapsed ? item.name : undefined}
                                 >
-                                    <Icon />
+                                    <span className="w-4 h-4 flex-shrink-0">
+                                        <Icon />
+                                    </span>
                                     {!collapsed && <span>{item.name}</span>}
                                 </Link>
                             );
@@ -149,10 +164,10 @@ export default function Layout() {
                     </div>
 
                     {/* Divider */}
-                    <div className="my-4 mx-4 border-t border-gray-200"></div>
+                    <div className="my-3 mx-4 border-t border-slate-800"></div>
 
                     {/* Admin Navigation */}
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                         {adminNavigation.map((item) => {
                             const isActive = location.pathname === item.href;
                             const Icon = item.icon;
@@ -160,10 +175,16 @@ export default function Layout() {
                                 <Link
                                     key={item.name}
                                     to={item.href}
-                                    className={`sidebar-link ${isActive ? 'active' : ''} ${collapsed ? 'justify-center px-2' : ''}`}
+                                    className={`flex items-center gap-2.5 mx-2 px-2.5 py-2 text-xs font-medium rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-slate-800 text-white border-l-2 border-blue-400'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                    } ${collapsed ? 'justify-center px-2' : ''}`}
                                     title={collapsed ? item.name : undefined}
                                 >
-                                    <Icon />
+                                    <span className="w-4 h-4 flex-shrink-0">
+                                        <Icon />
+                                    </span>
                                     {!collapsed && <span>{item.name}</span>}
                                 </Link>
                             );
@@ -172,38 +193,34 @@ export default function Layout() {
                 </nav>
 
                 {/* User section */}
-                <div className="border-t border-gray-200 p-4">
-                    <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
-                        <div className="w-9 h-9 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Icons.User />
-                        </div>
-                        {!collapsed && (
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                    {user?.full_name || 'User'}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate">
-                                    {user?.email}
-                                </p>
+                <div className="border-t border-slate-800 p-3">
+                    {!collapsed ? (
+                        <>
+                            <div className="text-xs text-slate-400 truncate">
+                                {user?.full_name || 'User'}
                             </div>
-                        )}
-                        {!collapsed && (
+                            <div className="text-xs text-slate-500 truncate mb-2">
+                                {user?.email}
+                            </div>
                             <button
                                 onClick={() => logout()}
-                                className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                                title="Logout"
+                                className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
                             >
-                                <Icons.Logout />
+                                <span className="w-4 h-4">
+                                    <Icons.Logout />
+                                </span>
+                                Sign Out
                             </button>
-                        )}
-                    </div>
-                    {collapsed && (
+                        </>
+                    ) : (
                         <button
                             onClick={() => logout()}
-                            className="mt-3 w-full flex justify-center p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                            className="w-full flex justify-center p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                             title="Logout"
                         >
-                            <Icons.Logout />
+                            <span className="w-4 h-4">
+                                <Icons.Logout />
+                            </span>
                         </button>
                     )}
                 </div>
@@ -211,13 +228,18 @@ export default function Layout() {
 
             {/* Main content */}
             <main
-                className="transition-all duration-200"
-                style={{ marginLeft: collapsed ? '72px' : '260px' }}
+                className="transition-all duration-200 bg-white min-h-screen"
+                style={{ marginLeft: collapsed ? '64px' : '224px' }}
             >
-                <div className="p-8">
-                    <Outlet />
+                <div className="p-5">
+                    <ErrorBoundary>
+                        <Outlet />
+                    </ErrorBoundary>
                 </div>
             </main>
+
+            {/* Toast notifications */}
+            <ToastContainer />
         </div>
     );
 }
