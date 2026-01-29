@@ -2,101 +2,89 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authAPI } from '../services/api';
+import { useFormValidation, validators } from '../hooks/useFormValidation';
+import { FormField } from '../components/FormField';
 
 export default function Login() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const login = useAuthStore((state) => state.login);
+    const [serverError, setServerError] = useState('');
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        setLoading(true);
-
-        try {
-            const response = await authAPI.login(email, password);
-            const { access_token, refresh_token, expires_in, user } = response.data;
-            login(access_token, refresh_token, expires_in, user);
-            navigate('/');
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Login failed');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const form = useFormValidation({
+        initialValues: {
+            email: '',
+            password: '',
+        },
+        rules: {
+            email: [
+                validators.required('Email is required'),
+                validators.email('Please enter a valid email address'),
+            ],
+            password: [
+                validators.required('Password is required'),
+                validators.minLength(6, 'Password must be at least 6 characters'),
+            ],
+        },
+        onSubmit: async (values) => {
+            setServerError('');
+            try {
+                const response = await authAPI.login(values.email, values.password);
+                const { access_token, refresh_token, expires_in, user } = response.data;
+                login(access_token, refresh_token, expires_in, user);
+                navigate('/');
+            } catch (err: any) {
+                setServerError(err.response?.data?.detail || 'Login failed. Please try again.');
+            }
+        },
+    });
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-indigo-50/30 to-purple-50/30">
-            {/* Background pattern */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-40 -right-40 w-80 h-80 bg-indigo-100 rounded-full opacity-50 blur-3xl"></div>
-                <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-100 rounded-full opacity-50 blur-3xl"></div>
-            </div>
-
-            <div className="relative w-full max-w-md mx-4">
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="w-full max-w-sm mx-4">
                 {/* Card */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/50 p-8">
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
                     {/* Logo */}
-                    <div className="text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl mb-4 shadow-lg shadow-indigo-500/25">
-                            <span className="text-white font-bold text-xl">OR</span>
+                    <div className="text-center mb-6">
+                        <div className="inline-flex items-center justify-center w-10 h-10 bg-slate-900 rounded mb-3">
+                            <span className="text-white font-semibold text-sm">OR</span>
                         </div>
-                        <h1 className="text-2xl font-bold text-gray-900">
-                            OpenRegReport Portal
+                        <h1 className="text-base font-semibold text-gray-900">
+                            OpenRegReport
                         </h1>
-                        <p className="mt-2 text-sm text-gray-500">
+                        <p className="mt-1 text-xs text-gray-500">
                             Sign in to your account
                         </p>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                        {error && (
-                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm animate-fade-in">
-                                {error}
+                    <form onSubmit={form.handleSubmit} className="space-y-4">
+                        {serverError && (
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-xs">
+                                {serverError}
                             </div>
                         )}
 
-                        <div>
-                            <label htmlFor="email" className="input-label">
-                                Email address
-                            </label>
-                            <input
-                                id="email"
-                                name="email"
-                                type="email"
-                                required
-                                className="input"
-                                placeholder="you@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </div>
+                        <FormField
+                            label="Email"
+                            type="email"
+                            placeholder="you@example.com"
+                            required
+                            {...form.getFieldProps('email')}
+                        />
 
-                        <div>
-                            <label htmlFor="password" className="input-label">
-                                Password
-                            </label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                required
-                                className="input"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </div>
+                        <FormField
+                            label="Password"
+                            type="password"
+                            placeholder="Enter password"
+                            required
+                            {...form.getFieldProps('password')}
+                        />
 
                         <button
                             type="submit"
-                            disabled={loading}
-                            className="btn btn-primary w-full py-3"
+                            disabled={form.isSubmitting || form.hasErrors}
+                            className="btn btn-primary w-full py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {loading ? (
+                            {form.isSubmitting ? (
                                 <span className="flex items-center justify-center gap-2">
                                     <div className="spinner"></div>
                                     Signing in...
@@ -108,22 +96,21 @@ export default function Login() {
                     </form>
 
                     {/* Demo credentials */}
-                    <div className="mt-6 pt-6 border-t border-gray-100">
-                        <div className="bg-indigo-50 rounded-lg p-4 text-center">
-                            <p className="text-xs font-medium text-indigo-700 uppercase tracking-wide mb-2">
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="bg-gray-50 rounded p-3 text-center">
+                            <p className="text-xs font-medium text-gray-600 mb-1">
                                 Demo Credentials
                             </p>
-                            <div className="text-sm text-indigo-600 space-y-0.5">
-                                <p><span className="text-indigo-500">Email:</span> admin@example.com</p>
-                                <p><span className="text-indigo-500">Password:</span> admin123</p>
+                            <div className="text-xs text-gray-500 space-y-0.5">
+                                <p>admin@example.com / admin123</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Footer */}
-                <p className="mt-6 text-center text-sm text-gray-400">
-                    OpenRegReport Portal v0.1.0
+                <p className="mt-4 text-center text-xs text-gray-400">
+                    OpenRegReport v0.1.0
                 </p>
             </div>
         </div>

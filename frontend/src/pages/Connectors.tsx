@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { connectorsAPI } from '../services/api';
+import { validators } from '../hooks/useFormValidation';
+import { FormError } from '../components/FormError';
 
 // Database type options
 const DB_TYPES = [
-    { value: 'postgresql', label: 'PostgreSQL', icon: '🐘' },
-    { value: 'sqlserver', label: 'SQL Server', icon: '🔷' },
-    { value: 'oracle', label: 'Oracle', icon: '🔴' },
-    { value: 'mysql', label: 'MySQL', icon: '🐬' },
-    { value: 'odbc', label: 'ODBC', icon: '🔌' },
+    { value: 'postgresql', label: 'PostgreSQL', icon: 'PG' },
+    { value: 'sqlserver', label: 'SQL Server', icon: 'SQL' },
+    { value: 'oracle', label: 'Oracle', icon: 'ORA' },
+    { value: 'mysql', label: 'MySQL', icon: 'MY' },
+    { value: 'odbc', label: 'ODBC', icon: 'ODBC' },
 ];
 
 interface Connector {
@@ -32,6 +34,24 @@ interface ConnectorFormData {
     password: string;
 }
 
+interface FormErrors {
+    name?: string | null;
+    host?: string | null;
+    port?: string | null;
+    database?: string | null;
+    username?: string | null;
+    password?: string | null;
+}
+
+interface TouchedFields {
+    name?: boolean;
+    host?: boolean;
+    port?: boolean;
+    database?: boolean;
+    username?: boolean;
+    password?: boolean;
+}
+
 const initialFormData: ConnectorFormData = {
     name: '',
     description: '',
@@ -51,6 +71,31 @@ const getDefaultPort = (type: string): string => {
         case 'mysql': return '3306';
         default: return '';
     }
+};
+
+// Validation rules for connector form
+const validationRules = {
+    name: [
+        validators.required('Connector name is required'),
+        validators.minLength(3, 'Name must be at least 3 characters'),
+        validators.maxLength(100, 'Name must be less than 100 characters'),
+    ],
+    host: [
+        validators.required('Host is required'),
+    ],
+    port: [
+        validators.required('Port is required'),
+        validators.port('Please enter a valid port (1-65535)'),
+    ],
+    database: [
+        validators.required('Database name is required'),
+    ],
+    username: [
+        validators.required('Username is required'),
+    ],
+    password: [
+        validators.required('Password is required'),
+    ],
 };
 
 // Icons
@@ -102,9 +147,80 @@ export default function Connectors() {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [testLoading, setTestLoading] = useState(false);
 
+    // Form validation state
+    const [errors, setErrors] = useState<FormErrors>({});
+    const [touched, setTouched] = useState<TouchedFields>({});
+
     const { data: connectors, isLoading } = useQuery('connectors', () =>
         connectorsAPI.list().then((res) => res.data)
     );
+
+    // Validate a single field
+    const validateField = useCallback((name: keyof FormErrors, value: string, isEditing: boolean): string | null => {
+        // Password is optional when editing
+        if (name === 'password' && isEditing) {
+            return null;
+        }
+
+        const rules = validationRules[name as keyof typeof validationRules];
+        if (!rules) return null;
+
+        for (const rule of rules) {
+            if (!rule.validate(value)) {
+                return rule.message;
+            }
+        }
+        return null;
+    }, []);
+
+    // Validate all fields
+    const validateAll = useCallback((isEditing: boolean): boolean => {
+        const newErrors: FormErrors = {};
+        let isValid = true;
+
+        const fieldsToValidate: (keyof FormErrors)[] = ['name', 'host', 'port', 'database', 'username'];
+        if (!isEditing) {
+            fieldsToValidate.push('password');
+        }
+
+        for (const field of fieldsToValidate) {
+            const error = validateField(field, formData[field] || '', isEditing);
+            newErrors[field] = error;
+            if (error) isValid = false;
+        }
+
+        setErrors(newErrors);
+        return isValid;
+    }, [formData, validateField]);
+
+    // Handle field blur
+    const handleBlur = useCallback((name: keyof FormErrors) => () => {
+        setTouched((prev) => ({ ...prev, [name]: true }));
+        const error = validateField(name, formData[name] || '', !!editingConnector);
+        setErrors((prev) => ({ ...prev, [name]: error }));
+    }, [formData, validateField, editingConnector]);
+
+    // Handle field change with validation
+    const handleFieldChange = useCallback((name: keyof ConnectorFormData, value: string) => {
+        setFormData((prev) => ({ ...prev, [name]: value }));
+
+        // Validate on change if field was touched
+        if (touched[name as keyof TouchedFields]) {
+            const error = validateField(name as keyof FormErrors, value, !!editingConnector);
+            setErrors((prev) => ({ ...prev, [name]: error }));
+        }
+    }, [touched, validateField, editingConnector]);
+
+    // Check if form has errors
+    const hasErrors = Object.values(errors).some((error) => error !== null && error !== undefined);
+
+    // Reset validation state when modal opens/closes
+    useEffect(() => {
+        if (!showModal) {
+            setErrors({});
+            setTouched({});
+        }
+    }, [showModal]);
 
     const createMutation = useMutation(
         (data: any) => connectorsAPI.create(data),
@@ -142,12 +258,16 @@ export default function Connectors() {
         setEditingConnector(null);
         setFormData(initialFormData);
         setTestResult(null);
+        setErrors({});
+        setTouched({});
     };
 
     const openCreateModal = () => {
         setFormData(initialFormData);
         setEditingConnector(null);
         setTestResult(null);
+        setErrors({});
+        setTouched({});
         setShowModal(true);
     };
 
@@ -164,6 +284,8 @@ export default function Connectors() {
             password: '', // Don't show password
         });
         setTestResult(null);
+        setErrors({});
+        setTouched({});
         setShowModal(true);
     };
 
@@ -208,6 +330,22 @@ export default function Connectors() {
     };
 
     const handleSubmit = () => {
+        // Mark all fields as touched
+        const allTouched: TouchedFields = {
+            name: true,
+            host: true,
+            port: true,
+            database: true,
+            username: true,
+            password: true,
+        };
+        setTouched(allTouched);
+
+        // Validate all fields
+        if (!validateAll(!!editingConnector)) {
+            return;
+        }
+
         const payload = {
             name: formData.name,
             description: formData.description,
@@ -232,10 +370,16 @@ export default function Connectors() {
 
     const getDbIcon = (type: string) => {
         const db = DB_TYPES.find(d => d.value === type);
-        return db?.icon || '🔌';
+        return db?.icon || 'DB';
     };
 
     const isSaving = createMutation.isLoading || updateMutation.isLoading;
+
+    // Helper to get input class with error state
+    const getInputClass = (fieldName: keyof FormErrors) => {
+        const hasError = touched[fieldName] && errors[fieldName];
+        return `input ${hasError ? 'input-error' : ''}`;
+    };
 
     return (
         <div className="animate-fade-in">
@@ -357,15 +501,20 @@ export default function Connectors() {
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="input-label">Name *</label>
+                                <div className="form-field">
+                                    <label className="input-label">
+                                        Name <span className="text-red-500">*</span>
+                                    </label>
                                     <input
                                         type="text"
-                                        className="input"
+                                        className={getInputClass('name')}
                                         placeholder="Production DB"
                                         value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        onChange={(e) => handleFieldChange('name', e.target.value)}
+                                        onBlur={handleBlur('name')}
+                                        aria-invalid={!!errors.name}
                                     />
+                                    {touched.name && <FormError error={errors.name} />}
                                 </div>
                                 <div>
                                     <label className="input-label">Description</label>
@@ -382,59 +531,82 @@ export default function Connectors() {
                             <div className="border-t border-gray-100 pt-5">
                                 <h4 className="text-sm font-medium text-gray-700 mb-4">Connection Details</h4>
                                 <div className="grid grid-cols-3 gap-4">
-                                    <div className="col-span-2">
-                                        <label className="input-label">Host *</label>
+                                    <div className="col-span-2 form-field">
+                                        <label className="input-label">
+                                            Host <span className="text-red-500">*</span>
+                                        </label>
                                         <input
                                             type="text"
-                                            className="input"
+                                            className={getInputClass('host')}
                                             placeholder="localhost"
                                             value={formData.host}
-                                            onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                                            onChange={(e) => handleFieldChange('host', e.target.value)}
+                                            onBlur={handleBlur('host')}
+                                            aria-invalid={!!errors.host}
                                         />
+                                        {touched.host && <FormError error={errors.host} />}
                                     </div>
-                                    <div>
-                                        <label className="input-label">Port *</label>
+                                    <div className="form-field">
+                                        <label className="input-label">
+                                            Port <span className="text-red-500">*</span>
+                                        </label>
                                         <input
                                             type="text"
-                                            className="input"
+                                            className={getInputClass('port')}
                                             placeholder={getDefaultPort(formData.type)}
                                             value={formData.port}
-                                            onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+                                            onChange={(e) => handleFieldChange('port', e.target.value)}
+                                            onBlur={handleBlur('port')}
+                                            aria-invalid={!!errors.port}
                                         />
+                                        {touched.port && <FormError error={errors.port} />}
                                     </div>
                                 </div>
-                                <div className="mt-4">
-                                    <label className="input-label">Database Name *</label>
+                                <div className="mt-4 form-field">
+                                    <label className="input-label">
+                                        Database Name <span className="text-red-500">*</span>
+                                    </label>
                                     <input
                                         type="text"
-                                        className="input"
+                                        className={getInputClass('database')}
                                         placeholder="mydb"
                                         value={formData.database}
-                                        onChange={(e) => setFormData({ ...formData, database: e.target.value })}
+                                        onChange={(e) => handleFieldChange('database', e.target.value)}
+                                        onBlur={handleBlur('database')}
+                                        aria-invalid={!!errors.database}
                                     />
+                                    {touched.database && <FormError error={errors.database} />}
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <label className="input-label">Username *</label>
+                                    <div className="form-field">
+                                        <label className="input-label">
+                                            Username <span className="text-red-500">*</span>
+                                        </label>
                                         <input
                                             type="text"
-                                            className="input"
+                                            className={getInputClass('username')}
                                             placeholder="admin"
                                             value={formData.username}
-                                            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                            onChange={(e) => handleFieldChange('username', e.target.value)}
+                                            onBlur={handleBlur('username')}
+                                            aria-invalid={!!errors.username}
                                         />
+                                        {touched.username && <FormError error={errors.username} />}
                                     </div>
-                                    <div>
+                                    <div className="form-field">
                                         <label className="input-label">
-                                            Password {editingConnector ? '(leave blank to keep)' : '*'}
+                                            Password {editingConnector ? '(leave blank to keep)' : <span className="text-red-500">*</span>}
                                         </label>
                                         <input
                                             type="password"
-                                            className="input"
-                                            placeholder="••••••••"
+                                            className={!editingConnector ? getInputClass('password') : 'input'}
+                                            placeholder="********"
                                             value={formData.password}
-                                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                            onChange={(e) => handleFieldChange('password', e.target.value)}
+                                            onBlur={!editingConnector ? handleBlur('password') : undefined}
+                                            aria-invalid={!editingConnector && !!errors.password}
                                         />
+                                        {!editingConnector && touched.password && <FormError error={errors.password} />}
                                     </div>
                                 </div>
                             </div>
@@ -473,8 +645,8 @@ export default function Connectors() {
                             </button>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!formData.name || !formData.host || isSaving}
-                                className="btn btn-primary"
+                                disabled={isSaving || hasErrors}
+                                className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isSaving ? (
                                     <span className="flex items-center gap-2">
