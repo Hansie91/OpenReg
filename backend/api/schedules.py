@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 import models
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -329,7 +329,10 @@ async def create_schedule(
     db.add(schedule)
     db.commit()
     db.refresh(schedule)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "Schedule", str(schedule.id),
+              changes={"name": data.name, "report_id": str(data.report_id), "schedule_type": schedule_type})
+
     return ScheduleResponse(
         id=schedule.id,
         tenant_id=schedule.tenant_id,
@@ -419,7 +422,11 @@ async def update_schedule(
     schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
-    
+
+    update_data = data.model_dump(exclude_unset=True)
+    log_audit(db, current_user, models.AuditAction.UPDATE, "Schedule", str(schedule.id),
+              changes={k: v for k, v in update_data.items() if v is not None})
+
     return ScheduleResponse(
         id=schedule.id,
         tenant_id=schedule.tenant_id,
@@ -469,7 +476,10 @@ async def toggle_schedule(
     schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
-    
+
+    log_audit(db, current_user, models.AuditAction.UPDATE, "Schedule", str(schedule.id),
+              changes={"is_active": schedule.is_active})
+
     return ScheduleResponse(
         id=schedule.id,
         tenant_id=schedule.tenant_id,
@@ -502,10 +512,13 @@ async def delete_schedule(
     
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
-    
+
+    schedule_id_str = str(schedule.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "Schedule", schedule_id_str)
+
     db.delete(schedule)
     db.commit()
-    
+
     return None
 
 

@@ -13,7 +13,7 @@ from datetime import datetime
 from uuid import UUID
 
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 from services.webhooks import WebhookService
 import models
 
@@ -184,6 +184,9 @@ async def create_webhook(
         retry_policy=request.retry_policy
     )
 
+    log_audit(db, current_user, models.AuditAction.CREATE, "Webhook", str(webhook.id),
+              changes={"name": request.name, "url": str(request.url), "events": request.events})
+
     return WebhookCreateResponse(
         webhook=webhook_to_response(webhook),
         secret=secret
@@ -256,6 +259,10 @@ async def update_webhook(
     db.commit()
     db.refresh(webhook)
 
+    # Exclude secret from logged changes (though webhook update doesn't include secret)
+    safe_changes = {k: v for k, v in update_data.items() if k != "secret"}
+    log_audit(db, current_user, models.AuditAction.UPDATE, "Webhook", str(webhook.id), changes=safe_changes)
+
     return webhook_to_response(webhook)
 
 
@@ -273,6 +280,9 @@ async def delete_webhook(
 
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
+
+    webhook_id_str = str(webhook.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "Webhook", webhook_id_str)
 
     db.delete(webhook)
     db.commit()
@@ -298,6 +308,9 @@ async def rotate_webhook_secret(
         raise HTTPException(status_code=404, detail="Webhook not found")
 
     new_secret = WebhookService.rotate_secret(db, webhook)
+
+    log_audit(db, current_user, models.AuditAction.UPDATE, "Webhook", str(webhook.id),
+              changes={"action": "rotate_secret"})
 
     return {
         "message": "Secret rotated successfully",

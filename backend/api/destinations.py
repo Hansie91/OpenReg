@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from database import get_db
-from services.auth import get_current_user, encrypt_credentials, decrypt_credentials
+from services.auth import get_current_user, encrypt_credentials, decrypt_credentials, log_audit
 from services.delivery import DeliveryService
 import models
 from pydantic import BaseModel, Field
@@ -194,7 +194,10 @@ async def create_destination(
     db.add(destination)
     db.commit()
     db.refresh(destination)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "Destination", str(destination.id),
+              changes={"name": data.name, "protocol": data.protocol, "host": data.host})
+
     return destination_to_response(destination)
 
 
@@ -293,7 +296,12 @@ async def update_destination(
     destination.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(destination)
-    
+
+    # Exclude password from logged changes
+    update_data = data.model_dump(exclude_unset=True)
+    safe_changes = {k: v for k, v in update_data.items() if v is not None and k != "password"}
+    log_audit(db, current_user, models.AuditAction.UPDATE, "Destination", str(destination.id), changes=safe_changes)
+
     return destination_to_response(destination)
 
 
@@ -311,10 +319,13 @@ async def delete_destination(
     
     if not destination:
         raise HTTPException(status_code=404, detail="Destination not found")
-    
+
+    destination_id_str = str(destination.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "Destination", destination_id_str)
+
     db.delete(destination)
     db.commit()
-    
+
     return None
 
 
