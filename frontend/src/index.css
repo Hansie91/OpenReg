@@ -392,3 +392,19 @@ body {
 .spinner {
   @apply w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin;
 }
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}
