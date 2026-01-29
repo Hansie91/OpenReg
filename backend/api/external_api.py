@@ -23,7 +23,7 @@ from models import (
     Report, ValidationRule, Schedule, MappingSet
 )
 from database import get_db
-from services.auth import get_current_user, encrypt_credentials
+from services.auth import get_current_user, encrypt_credentials, log_audit
 # Note: require_permissions is a decorator, not a dependency
 # For now, we use get_current_user directly for API access
 from services.external_api import ExternalRegulatoryAPIClient, ExternalAPISyncService, SchemaMapper
@@ -219,6 +219,9 @@ async def create_api_config(
     db.commit()
     db.refresh(new_config)
 
+    log_audit(db, current_user, models.AuditAction.CREATE, "ExternalAPIConfig", str(new_config.id),
+              changes={"name": config_data.name, "base_url": config_data.api_base_url})
+
     logger.info(f"Created external API config: {new_config.name} ({new_config.id})")
 
     return ExternalAPIConfigResponse(
@@ -327,6 +330,11 @@ async def update_api_config(
     db.commit()
     db.refresh(config)
 
+    # Exclude credentials from logged changes
+    update_data = config_data.model_dump(exclude_unset=True)
+    safe_changes = {k: v for k, v in update_data.items() if v is not None and k != "credentials"}
+    log_audit(db, current_user, models.AuditAction.UPDATE, "ExternalAPIConfig", str(config.id), changes=safe_changes)
+
     return ExternalAPIConfigResponse(
         id=str(config.id),
         tenant_id=str(config.tenant_id),
@@ -363,6 +371,8 @@ async def delete_api_config(
 
     if not config:
         raise HTTPException(status_code=404, detail="API configuration not found")
+
+    log_audit(db, current_user, models.AuditAction.DELETE, "ExternalAPIConfig", config_id)
 
     db.delete(config)
     db.commit()
@@ -436,6 +446,9 @@ async def trigger_sync(
         triggered_by="manual",
         trigger_user_id=str(current_user.id)
     )
+
+    log_audit(db, current_user, models.AuditAction.EXECUTE, "ExternalAPIConfig", str(config.id),
+              changes={"action": "manual_sync", "sync_type": request.mode})
 
     logger.info(f"Triggered sync for {config.name}: task_id={task.id}")
 

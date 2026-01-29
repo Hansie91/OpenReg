@@ -12,7 +12,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 from services.api_keys import api_key_service
 from core.permissions import Permission, PermissionChecker
 import models
@@ -107,6 +107,9 @@ async def create_api_key(
         rate_limit_per_minute=request.rate_limit_per_minute,
         allowed_ips=request.allowed_ips,
     )
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "APIKey", str(api_key.id),
+              changes={"name": request.name, "scopes": request.permissions})
 
     return CreateAPIKeyResponse(
         id=str(api_key.id),
@@ -244,6 +247,10 @@ async def update_api_key(
     db.commit()
     db.refresh(api_key)
 
+    update_data = request.model_dump(exclude_unset=True)
+    log_audit(db, current_user, models.AuditAction.UPDATE, "APIKey", str(api_key.id),
+              changes={k: v for k, v in update_data.items() if v is not None})
+
     return APIKeyResponse(
         id=str(api_key.id),
         name=api_key.name,
@@ -290,6 +297,9 @@ async def rotate_api_key(
 
     plain_key, new_api_key = result
 
+    log_audit(db, current_user, models.AuditAction.UPDATE, "APIKey", str(new_api_key.id),
+              changes={"action": "rotate"})
+
     return RotateKeyResponse(
         id=str(new_api_key.id),
         name=new_api_key.name,
@@ -324,5 +334,8 @@ async def revoke_api_key(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found or already revoked"
         )
+
+    log_audit(db, current_user, models.AuditAction.UPDATE, "APIKey", key_id,
+              changes={"is_active": False, "action": "revoke"})
 
     return None
