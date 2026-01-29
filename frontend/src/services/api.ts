@@ -448,7 +448,12 @@ export const lineageAPI = {
 
 // External API Service (Regulatory Data Sync)
 export const externalAPIService = {
-    // Configurations
+    // Connection
+    getConnectionStatus: () => api.get('/external-api/connection'),
+    connect: (apiKey: string) => api.post('/external-api/connect', { api_key: apiKey }),
+    disconnect: () => api.post('/external-api/disconnect'),
+
+    // Configurations (legacy)
     listConfigs: () => api.get('/external-api/configs'),
     getConfig: (id: string) => api.get(`/external-api/configs/${id}`),
     createConfig: (data: any) => api.post('/external-api/configs', data),
@@ -476,5 +481,18 @@ export const externalAPIService = {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
+};
+
+// Templates API (Pre-built regulatory templates)
+export const templatesAPI = {
+    list: (regulation?: string, category?: string) =>
+        api.get('/templates', { params: { regulation, category } }),
+    get: (id: string) => api.get(`/templates/${id}`),
+    import: (id: string, data: {
+        name?: string;
+        description?: string;
+        connector_id?: string;
+        source_table?: string;
+    }) => api.post(`/templates/${id}/import`, data),
 };
 
