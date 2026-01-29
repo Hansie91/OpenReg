@@ -265,39 +265,68 @@ Test your integrations safely before going live:
 
 ## 📡 API Documentation
 
-OpenReg provides a comprehensive REST API for all operations.
+OpenReg provides a comprehensive REST API for all operations. See the [complete API Guide](docs/API_GUIDE.md) for full documentation with examples.
 
-### Authentication
+### Quick Authentication
 
 ```bash
-# JWT Authentication
-curl -X POST /api/v1/auth/login \
+# 1. Login and get token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "secret"}'
+  -d '{"email": "admin@example.com", "password": "admin123"}' \
+  | jq -r '.access_token')
 
-# API Key Authentication
-curl -X GET /api/v1/reports \
-  -H "X-API-Key: your_api_key_here"
+# 2. Use token in requests
+curl http://localhost:8000/api/v1/reports \
+  -H "Authorization: Bearer $TOKEN"
+
+# Alternative: API Key Authentication (for programmatic access)
+curl http://localhost:8000/api/v1/reports \
+  -H "X-API-Key: ork_your_api_key_here"
 ```
 
-### Key Endpoints
+### API Quick Reference
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/v1/auth/login` | Authenticate and get tokens |
-| `POST /api/v1/auth/refresh` | Refresh access token |
-| `GET /api/v1/reports` | List reports |
-| `POST /api/v1/reports/{id}/execute` | Execute a report |
-| `GET /api/v1/workflow/runs/{id}/workflow` | Get workflow status |
-| `POST /api/v1/webhooks` | Register a webhook |
-| `GET /api/v1/api-keys` | List API keys |
-| `PUT /api/v1/admin/tenant/environment` | Switch sandbox/production |
+| Category | Endpoints | Description |
+|----------|-----------|-------------|
+| **Authentication** | `/auth/login`, `/auth/refresh`, `/auth/logout` | JWT tokens and sessions |
+| **Reports** | `/reports`, `/reports/{id}/execute` | Create, configure, execute reports |
+| **Runs** | `/runs`, `/runs/{id}/artifacts` | View execution history, download files |
+| **Connectors** | `/connectors`, `/connectors/{id}/test` | Database connections |
+| **Destinations** | `/destinations` | SFTP/FTP delivery endpoints |
+| **Schedules** | `/schedules` | Cron and calendar scheduling |
+| **Validations** | `/validations` | Data quality rules |
+| **Mappings** | `/mappings` | Cross-reference data |
+| **Workflow** | `/workflow/runs/{id}/workflow` | Real-time execution status |
+| **Webhooks** | `/webhooks` | Event notifications |
+| **API Keys** | `/api-keys` | Programmatic access management |
+| **Admin** | `/admin/users`, `/admin/roles` | User and role management |
+| **Dashboard** | `/dashboard/daily-summary` | Summary statistics |
+
+### Example: Execute a Report
+
+```bash
+# Execute report and get job ID
+JOB=$(curl -s -X POST "http://localhost:8000/api/v1/reports/$REPORT_ID/execute" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"parameters": {"business_date": "2024-01-19"}}' \
+  | jq -r '.job_run_id')
+
+# Check progress
+curl "http://localhost:8000/api/v1/workflow/runs/$JOB/workflow/progress" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ### Interactive Documentation
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/api/v1/openapi.json
+| Tool | URL | Description |
+|------|-----|-------------|
+| Swagger UI | http://localhost:8000/docs | Try API calls interactively |
+| ReDoc | http://localhost:8000/redoc | Browsable documentation |
+| OpenAPI JSON | http://localhost:8000/api/v1/openapi.json | Machine-readable spec |
+
+> **Full API Reference**: See [docs/API_GUIDE.md](docs/API_GUIDE.md) for complete documentation with curl and Python examples for all 24 API routers.
 
 ---
 
