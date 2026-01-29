@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from database import get_db
+from core.problem import NotFoundError, BadRequestError, ConflictError, ServiceUnavailableError, InternalError
 from services.auth import get_current_user, encrypt_credentials, decrypt_credentials, log_audit
 from services.database import DatabaseService, DatabaseConnectionError
 import models
@@ -107,8 +108,10 @@ async def get_connector(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     return connector
 
 
@@ -126,8 +129,10 @@ async def update_connector(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     # Update fields if provided
     if update.name is not None:
         connector.name = update.name
@@ -161,17 +166,18 @@ async def delete_connector(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     # Check if connector is used by any reports
     report_count = db.query(models.ReportVersion).filter(
         models.ReportVersion.connector_id == connector_id
     ).count()
-    
+
     if report_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete connector: it is used by {report_count} report(s)"
+        raise ConflictError(
+            detail=f"Cannot delete connector: it is used by {report_count} report version(s). Remove it from all reports first."
         )
     
     log_audit(db, current_user, models.AuditAction.DELETE, "Connector", str(connector.id))
@@ -214,12 +220,14 @@ async def test_existing_connector(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     try:
         # Decrypt credentials
         credentials = decrypt_credentials(connector.encrypted_credentials)
-        
+
         result = DatabaseService.test_connection(
             db_type=connector.type.value,
             config=connector.config,
@@ -255,11 +263,13 @@ async def list_connector_tables(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     try:
         credentials = decrypt_credentials(connector.encrypted_credentials)
-        
+
         # Get tables using the appropriate query for the database type
         tables = DatabaseService.get_tables(
             db_type=connector.type.value,
@@ -267,14 +277,18 @@ async def list_connector_tables(
             credentials=credentials,
             schema_filter=schema_name
         )
-        
+
         return {"tables": tables}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise BadRequestError(detail=str(e))
     except DatabaseConnectionError as e:
-        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+        raise ServiceUnavailableError(
+            detail=f"Could not connect to database: {e}. Check connection settings and ensure the database is accessible."
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list tables: {str(e)}")
+        raise InternalError(
+            detail="Failed to list tables. Please try again or contact support if the issue persists."
+        )
 
 
 @router.get("/{connector_id}/columns")
@@ -302,11 +316,13 @@ async def list_table_columns(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     try:
         credentials = decrypt_credentials(connector.encrypted_credentials)
-        
+
         # Get columns for the specified table
         columns = DatabaseService.get_columns(
             db_type=connector.type.value,
@@ -315,12 +331,16 @@ async def list_table_columns(
             table_name=table,
             schema_name=schema_name
         )
-        
+
         return {"columns": columns}
     except DatabaseConnectionError as e:
-        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+        raise ServiceUnavailableError(
+            detail=f"Could not connect to database: {e}. Check connection settings and ensure the database is accessible."
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list columns: {str(e)}")
+        raise InternalError(
+            detail="Failed to list columns. Please try again or contact support if the issue persists."
+        )
 
 
 @router.get("/{connector_id}/preview")
@@ -353,11 +373,13 @@ async def preview_table_data(
     ).first()
     
     if not connector:
-        raise HTTPException(status_code=404, detail="Connector not found")
-    
+        raise NotFoundError(
+            detail=f"Connector with ID '{connector_id}' was not found. Verify the ID is correct."
+        )
+
     try:
         credentials = decrypt_credentials(connector.encrypted_credentials)
-        
+
         # Get preview data
         rows = DatabaseService.preview_table(
             db_type=connector.type.value,
@@ -367,10 +389,14 @@ async def preview_table_data(
             schema_name=schema_name,
             limit=limit
         )
-        
+
         return {"rows": rows, "table": table, "row_count": len(rows)}
     except DatabaseConnectionError as e:
-        raise HTTPException(status_code=400, detail=f"Connection error: {str(e)}")
+        raise ServiceUnavailableError(
+            detail=f"Could not connect to database: {e}. Check connection settings and ensure the database is accessible."
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to preview data: {str(e)}")
+        raise InternalError(
+            detail="Failed to preview data. Please try again or contact support if the issue persists."
+        )
 

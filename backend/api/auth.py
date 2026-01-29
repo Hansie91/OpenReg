@@ -15,6 +15,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from database import get_db
+from core.problem import AuthenticationError, BadRequestError, NotFoundError
 from services.auth import (
     authenticate_user,
     create_access_token,
@@ -95,10 +96,8 @@ async def login(
     """
     user = authenticate_user(db, credentials.email, credentials.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
+        raise AuthenticationError(
+            detail="Invalid email or password. Please check your credentials and try again."
         )
 
     # Create tokens with enhanced claims
@@ -167,15 +166,16 @@ async def refresh_token_endpoint(
 
         # Check if refresh token has been revoked
         if old_jti and not token_store.is_token_valid(user_id, old_jti, "refresh"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token has been revoked"
+            raise AuthenticationError(
+                detail="Your session has been revoked. Please sign in again."
             )
 
         user = db.query(models.User).filter(models.User.id == user_id).first()
 
         if not user or not user.is_active:
-            raise HTTPException(status_code=401, detail="User not found or inactive")
+            raise AuthenticationError(
+                detail="User account not found or has been deactivated. Please contact your administrator."
+            )
 
         # Revoke old refresh token (token rotation)
         if old_jti:
@@ -221,10 +221,12 @@ async def refresh_token_endpoint(
                 "is_superuser": user.is_superuser
             }
         }
-    except HTTPException:
+    except AuthenticationError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        raise AuthenticationError(
+            detail="Your session has expired or is invalid. Please sign in again."
+        )
 
 
 @router.get("/me", response_model=UserResponse)

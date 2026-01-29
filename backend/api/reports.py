@@ -11,6 +11,7 @@ from datetime import datetime
 from uuid import UUID
 
 from database import get_db
+from core.problem import NotFoundError, ValidationError, BadRequestError, ConflictError
 from services.auth import get_current_user, log_audit
 from services.code_generator import CodeGenerator
 from services.lineage import LineageService
@@ -219,8 +220,10 @@ async def get_report(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     return report
 
 
@@ -238,8 +241,10 @@ async def update_report(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Track changes for audit
     changes = {}
     for field, value in report_update.dict(exclude_unset=True).items():
@@ -269,8 +274,10 @@ async def delete_report(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Audit log before deletion
     log_audit(db, current_user, models.AuditAction.DELETE, "Report", str(report.id))
     
@@ -294,8 +301,10 @@ async def list_report_versions(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     versions = db.query(models.ReportVersion).filter(
         models.ReportVersion.report_id == report_id
     ).order_by(models.ReportVersion.version_number.desc()).all()
@@ -330,8 +339,10 @@ async def create_report_version(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Get latest version for semantic versioning
     latest = db.query(models.ReportVersion).filter(
         models.ReportVersion.report_id == report_id
@@ -404,8 +415,10 @@ async def approve_report_version(
     ).first()
     
     if not version:
-        raise HTTPException(status_code=404, detail="Report version not found")
-    
+        raise NotFoundError(
+            detail=f"Report version with ID '{version_id}' was not found. Verify both report and version IDs are correct."
+        )
+
     # Archive current active version
     if version.report.current_version_id:
         current_version = db.query(models.ReportVersion).filter(
@@ -450,10 +463,14 @@ async def execute_report(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     if not report.current_version_id:
-        raise HTTPException(status_code=400, detail="Report has no active version")
+        raise BadRequestError(
+            detail="This report has no active version. Create and approve a version before executing."
+        )
     
     # Create job run
     job_run = models.JobRun(
@@ -504,14 +521,16 @@ async def list_report_executions(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Get all versions of this report
     version_ids = db.query(models.ReportVersion.id).filter(
         models.ReportVersion.report_id == report_id
     ).all()
     version_ids = [v[0] for v in version_ids]
-    
+
     # Query job runs for these versions
     query = db.query(models.JobRun).filter(
         models.JobRun.report_version_id.in_(version_ids)
@@ -581,14 +600,16 @@ async def get_report_stats(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Get all versions of this report
     version_ids = db.query(models.ReportVersion.id).filter(
         models.ReportVersion.report_id == report_id
     ).all()
     version_ids = [v[0] for v in version_ids]
-    
+
     # Total executions
     total_executions = db.query(models.JobRun).filter(
         models.JobRun.report_version_id.in_(version_ids)
@@ -695,8 +716,10 @@ async def list_report_destinations(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Get linked destinations
     links = db.query(models.ReportDestination).filter(
         models.ReportDestination.report_id == report_id
@@ -744,8 +767,10 @@ async def link_destination(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Verify destination belongs to tenant
     destination = db.query(models.Destination).filter(
         models.Destination.id == request.destination_id,
@@ -753,8 +778,10 @@ async def link_destination(
     ).first()
     
     if not destination:
-        raise HTTPException(status_code=404, detail="Destination not found")
-    
+        raise NotFoundError(
+            detail=f"Destination with ID '{request.destination_id}' was not found. Verify the destination ID is correct."
+        )
+
     # Check if already linked
     existing = db.query(models.ReportDestination).filter(
         models.ReportDestination.report_id == report_id,
@@ -762,7 +789,9 @@ async def link_destination(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="Destination already linked to this report")
+        raise ConflictError(
+            detail="This destination is already linked to the report. Each destination can only be linked once."
+        )
     
     # Create link
     link = models.ReportDestination(
@@ -790,8 +819,10 @@ async def unlink_destination(
     ).first()
     
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
+        raise NotFoundError(
+            detail=f"Report with ID '{report_id}' was not found. Verify the ID is correct."
+        )
+
     # Find and delete link
     link = db.query(models.ReportDestination).filter(
         models.ReportDestination.report_id == report_id,
@@ -799,7 +830,9 @@ async def unlink_destination(
     ).first()
     
     if not link:
-        raise HTTPException(status_code=404, detail="Destination not linked to this report")
+        raise NotFoundError(
+            detail=f"Destination with ID '{destination_id}' is not linked to this report."
+        )
     
     db.delete(link)
     db.commit()
