@@ -11,7 +11,7 @@ from database import engine, Base, get_db
 from fastapi_problem.error import Problem
 from fastapi_problem.handler import add_exception_handler
 from config import settings
-from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks, external_api
+from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks, external_api, templates
 
 # Configure structured logging
 from core.logging import configure_logging, get_logger
@@ -286,6 +286,7 @@ app.include_router(lineage.router, prefix=f"{API_PREFIX}/lineage", tags=["Data L
 app.include_router(workflow.router, prefix=f"{API_PREFIX}/workflow", tags=["Workflow"])
 app.include_router(webhooks.router, prefix=f"{API_PREFIX}/webhooks", tags=["Webhooks"])
 app.include_router(external_api.router, prefix=API_PREFIX, tags=["External API"])
+app.include_router(templates.router, prefix=API_PREFIX, tags=["Templates"])
 
 
 @app.get("/")
