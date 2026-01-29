@@ -1,0 +1,103 @@
+{
+  "id": "sftr-standard-v1",
+  "name": "SFTR Securities Financing Report",
+  "description": "Securities financing transaction reporting under SFTR. Covers repos, securities lending, and margin lending.",
+  "regulation": "SFTR",
+  "version": "1.0.0",
+  "category": "sft_reporting",
+  "config": {
+    "mode": "simple",
+    "output_format": "xml",
+    "output_filename_template": "SFTR_{business_date}_{sequence}",
+    "field_mappings": [
+      {
+        "sourceColumn": "uti",
+        "targetXPath": "/Report/SFT/UTI",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Unique Transaction Identifier"
+      },
+      {
+        "sourceColumn": "reporting_counterparty_lei",
+        "targetXPath": "/Report/SFT/RptgCtrPty/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Reporting counterparty LEI"
+      },
+      {
+        "sourceColumn": "other_counterparty_lei",
+        "targetXPath": "/Report/SFT/OthrCtrPty/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Other counterparty LEI"
+      },
+      {
+        "sourceColumn": "sft_type",
+        "targetXPath": "/Report/SFT/SFTTp",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "SFT type (REPO, SLEB, SBSC, MGLD)"
+      },
+      {
+        "sourceColumn": "execution_timestamp",
+        "targetXPath": "/Report/SFT/ExctnTmStmp",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Execution timestamp"
+      },
+      {
+        "sourceColumn": "maturity_date",
+        "targetXPath": "/Report/SFT/MtrtyDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Maturity date (if applicable)"
+      },
+      {
+        "sourceColumn": "collateral_isin",
+        "targetXPath": "/Report/SFT/Coll/ISIN",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Collateral security ISIN"
+      },
+      {
+        "sourceColumn": "collateral_quantity",
+        "targetXPath": "/Report/SFT/Coll/Qty",
+        "transform": "DECIMAL_4",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Collateral quantity"
+      },
+      {
+        "sourceColumn": "principal_amount",
+        "targetXPath": "/Report/SFT/PrncplAmt/Amt",
+        "transform": "DECIMAL_2",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Principal amount"
+      },
+      {
+        "sourceColumn": "principal_currency",
+        "targetXPath": "/Report/SFT/PrncplAmt/Ccy",
+        "transform": "UPPER",
+        "defaultValue": "EUR",
+        "required": true,
+        "documentation": "Principal currency"
+      }
+    ],
+    "recommended_validations": [
+      "lei_format",
+      "uti_format",
+      "isin_format",
+      "date_sequence",
+      "amount_positive"
+    ]
+  },
+  "documentation_url": "https://docs.openreg.io/templates/sftr"
+}

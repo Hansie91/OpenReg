@@ -1,0 +1,103 @@
+{
+  "id": "mifir-rts25-v1",
+  "name": "MiFIR RTS 25 Transaction Report",
+  "description": "Daily transaction reporting per MiFIR RTS 25 requirements. Covers equity, bond, and derivative transactions.",
+  "regulation": "MiFIR",
+  "version": "1.0.0",
+  "category": "transaction_reporting",
+  "config": {
+    "mode": "simple",
+    "output_format": "xml",
+    "output_filename_template": "MiFIR_{business_date}_{sequence}",
+    "field_mappings": [
+      {
+        "sourceColumn": "transaction_id",
+        "targetXPath": "/Report/Transaction/TxId",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Unique transaction identifier"
+      },
+      {
+        "sourceColumn": "execution_timestamp",
+        "targetXPath": "/Report/Transaction/TradDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Trade execution date and time"
+      },
+      {
+        "sourceColumn": "buyer_lei",
+        "targetXPath": "/Report/Transaction/Buyr/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "LEI of the buyer"
+      },
+      {
+        "sourceColumn": "seller_lei",
+        "targetXPath": "/Report/Transaction/Sellr/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "LEI of the seller"
+      },
+      {
+        "sourceColumn": "instrument_isin",
+        "targetXPath": "/Report/Transaction/FinInstrm/ISIN",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "ISIN of the financial instrument"
+      },
+      {
+        "sourceColumn": "quantity",
+        "targetXPath": "/Report/Transaction/Qty",
+        "transform": "DECIMAL_4",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Quantity traded"
+      },
+      {
+        "sourceColumn": "price",
+        "targetXPath": "/Report/Transaction/Pric/Amt",
+        "transform": "DECIMAL_4",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Transaction price"
+      },
+      {
+        "sourceColumn": "price_currency",
+        "targetXPath": "/Report/Transaction/Pric/Ccy",
+        "transform": "UPPER",
+        "defaultValue": "EUR",
+        "required": true,
+        "documentation": "Price currency (ISO 4217)"
+      },
+      {
+        "sourceColumn": "venue_mic",
+        "targetXPath": "/Report/Transaction/TradVn/MIC",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "MIC code of trading venue"
+      },
+      {
+        "sourceColumn": "transaction_type",
+        "targetXPath": "/Report/Transaction/TxTp",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Transaction type code"
+      }
+    ],
+    "recommended_validations": [
+      "lei_format",
+      "isin_format",
+      "mic_format",
+      "quantity_positive",
+      "price_positive"
+    ]
+  },
+  "documentation_url": "https://docs.openreg.io/templates/mifir"
+}

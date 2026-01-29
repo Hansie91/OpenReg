@@ -1,0 +1,102 @@
+{
+  "id": "emir-refit-v1",
+  "name": "EMIR REFIT Derivative Trade Report",
+  "description": "Derivative trade reporting under EMIR REFIT requirements. Covers OTC and exchange-traded derivatives.",
+  "regulation": "EMIR",
+  "version": "1.0.0",
+  "category": "derivative_reporting",
+  "config": {
+    "mode": "simple",
+    "output_format": "xml",
+    "output_filename_template": "EMIR_{business_date}_{sequence}",
+    "field_mappings": [
+      {
+        "sourceColumn": "uti",
+        "targetXPath": "/Report/Trade/UTI",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Unique Transaction Identifier"
+      },
+      {
+        "sourceColumn": "reporting_counterparty_lei",
+        "targetXPath": "/Report/Trade/RptgCtrPty/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Reporting counterparty LEI"
+      },
+      {
+        "sourceColumn": "other_counterparty_lei",
+        "targetXPath": "/Report/Trade/OthrCtrPty/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Other counterparty LEI"
+      },
+      {
+        "sourceColumn": "trade_date",
+        "targetXPath": "/Report/Trade/ExctnDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Trade execution date"
+      },
+      {
+        "sourceColumn": "effective_date",
+        "targetXPath": "/Report/Trade/FctvDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Contract effective date"
+      },
+      {
+        "sourceColumn": "maturity_date",
+        "targetXPath": "/Report/Trade/MtrtyDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Contract maturity date"
+      },
+      {
+        "sourceColumn": "notional_amount",
+        "targetXPath": "/Report/Trade/NtnlAmt/Amt",
+        "transform": "DECIMAL_2",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Notional amount"
+      },
+      {
+        "sourceColumn": "notional_currency",
+        "targetXPath": "/Report/Trade/NtnlAmt/Ccy",
+        "transform": "UPPER",
+        "defaultValue": "EUR",
+        "required": true,
+        "documentation": "Notional currency"
+      },
+      {
+        "sourceColumn": "asset_class",
+        "targetXPath": "/Report/Trade/AsstClss",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Asset class code"
+      },
+      {
+        "sourceColumn": "contract_type",
+        "targetXPath": "/Report/Trade/CtrctTp",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Contract type"
+      }
+    ],
+    "recommended_validations": [
+      "lei_format",
+      "uti_format",
+      "date_sequence",
+      "notional_positive"
+    ]
+  },
+  "documentation_url": "https://docs.openreg.io/templates/emir"
+}
