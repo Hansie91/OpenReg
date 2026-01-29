@@ -13,7 +13,7 @@ from uuid import UUID
 from datetime import datetime
 
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 import models
 from services.encryption import encrypt_value, decrypt_value
 
@@ -196,7 +196,10 @@ async def create_topic(
     db.add(topic)
     db.commit()
     db.refresh(topic)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "StreamingTopic", str(topic.id),
+              changes={"name": request.name, "topic_name": request.topic_name})
+
     return topic_to_response(topic)
 
 
@@ -277,10 +280,17 @@ async def update_topic(
         topic.ssl_client_key = encrypt_value(request.ssl_client_key)
     if request.ssl_key_password is not None:
         topic.ssl_key_password = encrypt_value(request.ssl_key_password)
-    
+
     db.commit()
     db.refresh(topic)
-    
+
+    # Exclude sensitive fields from audit log
+    update_data = request.model_dump(exclude_unset=True)
+    sensitive_fields = ["sasl_username", "sasl_password", "ssl_ca_cert", "ssl_client_cert", "ssl_client_key", "ssl_key_password"]
+    safe_changes = {k: v for k, v in update_data.items() if v is not None and k not in sensitive_fields}
+    log_audit(db, current_user, models.AuditAction.UPDATE, "StreamingTopic", str(topic.id),
+              changes=safe_changes)
+
     return topic_to_response(topic)
 
 
@@ -298,10 +308,13 @@ async def delete_topic(
     
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
-    
+
+    topic_id_str = str(topic.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "StreamingTopic", topic_id_str)
+
     db.delete(topic)
     db.commit()
-    
+
     return {"message": "Topic deleted successfully"}
 
 

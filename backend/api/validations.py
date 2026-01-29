@@ -8,7 +8,7 @@ from datetime import datetime
 from uuid import UUID
 
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 import models
 
 router = APIRouter()
@@ -145,7 +145,10 @@ async def create_validation(
     db.add(new_rule)
     db.commit()
     db.refresh(new_rule)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "ValidationRule", str(new_rule.id),
+              changes={"name": validation.name, "rule_type": validation.rule_type, "severity": validation.severity})
+
     return ValidationRuleResponse(
         id=new_rule.id,
         name=new_rule.name,
@@ -243,7 +246,15 @@ async def update_validation(
     
     db.commit()
     db.refresh(rule)
-    
+
+    update_data = validation_update.model_dump(exclude_unset=True)
+    # Log expression presence but not content for security
+    changes = {k: v for k, v in update_data.items() if v is not None and k != "expression"}
+    if "expression" in update_data and update_data["expression"] is not None:
+        changes["expression"] = "updated"
+    log_audit(db, current_user, models.AuditAction.UPDATE, "ValidationRule", str(rule.id),
+              changes=changes)
+
     return ValidationRuleResponse(
         id=rule.id,
         name=rule.name,
@@ -273,11 +284,14 @@ async def delete_validation(
     
     if not rule:
         raise HTTPException(status_code=404, detail="Validation rule not found")
-    
+
+    log_audit(db, current_user, models.AuditAction.DELETE, "ValidationRule", str(rule.id),
+              changes={"is_active": False, "action": "soft_delete"})
+
     # Soft delete by marking as inactive
     rule.is_active = False
     db.commit()
-    
+
     return None
 
 

@@ -11,7 +11,7 @@ import csv
 import io
 
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, log_audit
 import models
 
 router = APIRouter()
@@ -122,7 +122,10 @@ async def create_mapping_set(
     db.add(new_set)
     db.commit()
     db.refresh(new_set)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "MappingSet", str(new_set.id),
+              changes={"name": mapping_set.name})
+
     return MappingSetResponse(
         id=new_set.id,
         name=new_set.name,
@@ -185,11 +188,19 @@ async def update_mapping_set(
     
     db.commit()
     db.refresh(mapping_set)
-    
+
+    changes = {}
+    if update_data.name is not None:
+        changes["name"] = update_data.name
+    if update_data.description is not None:
+        changes["description"] = update_data.description
+    log_audit(db, current_user, models.AuditAction.UPDATE, "MappingSet", str(mapping_set.id),
+              changes=changes)
+
     entry_count = db.query(models.CrossReferenceEntry).filter(
         models.CrossReferenceEntry.mapping_set_id == mapping_set.id
     ).count()
-    
+
     return MappingSetResponse(
         id=mapping_set.id,
         name=mapping_set.name,
@@ -214,10 +225,13 @@ async def delete_mapping_set(
     
     if not mapping_set:
         raise HTTPException(status_code=404, detail="Mapping set not found")
-    
+
+    mapping_set_id_str = str(mapping_set.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "MappingSet", mapping_set_id_str)
+
     db.delete(mapping_set)
     db.commit()
-    
+
     return None
 
 
@@ -328,9 +342,12 @@ async def create_mapping_entry(
     db.add(new_entry)
     db.commit()
     db.refresh(new_entry)
-    
+
+    log_audit(db, current_user, models.AuditAction.CREATE, "MappingEntry", str(new_entry.id),
+              changes={"source_field": entry.source_value, "target_field": entry.target_value})
+
     report_ids = [report.id for report in new_entry.reports] if new_entry.reports else []
-    
+
     return MappingEntryResponse(
         id=new_entry.id,
         mapping_set_id=new_entry.mapping_set_id,
@@ -383,10 +400,22 @@ async def update_mapping_entry(
         entry.extra_data = update_data.extra_data
     
     entry.updated_by = current_user.id
-    
+
     db.commit()
     db.refresh(entry)
-    
+
+    changes = {}
+    if update_data.source_value is not None:
+        changes["source_value"] = update_data.source_value
+    if update_data.target_value is not None:
+        changes["target_value"] = update_data.target_value
+    if update_data.effective_from is not None:
+        changes["effective_from"] = str(update_data.effective_from)
+    if update_data.effective_to is not None:
+        changes["effective_to"] = str(update_data.effective_to)
+    log_audit(db, current_user, models.AuditAction.UPDATE, "MappingEntry", str(entry.id),
+              changes=changes)
+
     return MappingEntryResponse.model_validate(entry)
 
 
@@ -414,10 +443,13 @@ async def delete_mapping_entry(
     
     if not entry:
         raise HTTPException(status_code=404, detail="Mapping entry not found")
-    
+
+    entry_id_str = str(entry.id)
+    log_audit(db, current_user, models.AuditAction.DELETE, "MappingEntry", entry_id_str)
+
     db.delete(entry)
     db.commit()
-    
+
     return None
 
 
