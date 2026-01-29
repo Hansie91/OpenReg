@@ -1,5 +1,18 @@
 # Frequently Asked Questions
 
+## Having Issues?
+
+For detailed troubleshooting steps with diagnostic commands, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
+
+**Quick diagnostic:**
+```bash
+docker-compose ps          # Check service status
+docker-compose logs --tail=50  # Recent logs
+curl http://localhost:8000/health  # Backend health
+```
+
+---
+
 ## Installation & Setup
 
 ### Q: What are the system requirements?
@@ -22,11 +35,12 @@ docker-compose exec backend python init_db.py
 ```
 
 ### Q: The containers won't start. What should I check?
-**A:**
+**A:** See [Docker & Startup Issues](TROUBLESHOOTING.md#docker--startup-issues) for detailed diagnostics.
+
+Quick checks:
 1. Is Docker Desktop running?
 2. Are ports available? Run: `netstat -an | findstr "3000 8000"`
 3. Check logs: `docker-compose logs`
-4. Try rebuilding: `docker-compose up -d --build`
 
 ### Q: I forgot the admin password. How do I reset it?
 **A:**
@@ -138,16 +152,22 @@ npm run dev
 ```
 
 ### Q: How do I run tests?
-**A:** (Tests to be added in v1)
+**A:**
 ```powershell
-# Backend
+# Backend (90 tests)
 cd backend
 pytest
 
-# Frontend
+# Frontend (62 tests)
 cd frontend
 npm test
+
+# E2E tests (requires running services)
+cd e2e
+npx playwright test
 ```
+
+See the [CHANGELOG](../CHANGELOG.md) for test coverage details.
 
 ### Q: Where can I find API documentation?
 **A:** Interactive API docs available at:
@@ -157,50 +177,32 @@ npm test
 
 ## Troubleshooting
 
-### Q: "Port already in use" error
-**A:** Find what's using the port:
-```powershell
-netstat -ano | findstr ":3000"
-```
-Then either stop that process or change the port in `docker-compose.yml`.
+For detailed troubleshooting with step-by-step diagnostic commands, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
-### Q: Frontend shows "Network Error"
-**A:** 
-1. Check backend is running: http://localhost:8000/health
-2. Check CORS settings in `.env`: `CORS_ORIGINS`
-3. Clear browser cache and hard refresh (Ctrl+Shift+R)
+### Q: Where do I find solutions for common errors?
+**A:** The [Troubleshooting Guide](TROUBLESHOOTING.md) covers:
+- Docker and startup issues
+- Database connection problems
+- Authentication errors (401/403)
+- API errors (422/500)
+- Worker/Celery issues
+- Frontend problems
+- MinIO storage issues
 
-### Q: Database connection failed
+### Q: How do I check if all services are running?
 **A:**
-```powershell
-# Check PostgreSQL is healthy
-docker-compose ps postgres
-docker-compose logs postgres
-
-# Connect to database manually
-docker-compose exec postgres psql -U openreg -d openreg
+```bash
+docker-compose ps
 ```
+All services should show "healthy" or "running" status.
 
-### Q: Worker not processing jobs
+### Q: What are the default credentials?
 **A:**
-```powershell
-# Check worker logs
-docker-compose logs worker
+- **Admin login:** admin@example.com / admin123
+- **MinIO console:** minioadmin / minioadmin
+- **PostgreSQL:** openreg / openreg_dev_password
 
-# Check Redis connection
-docker-compose exec redis redis-cli ping
-# Should return: PONG
-
-# Restart worker
-docker-compose restart worker
-```
-
-### Q: MinIO access denied
-**A:** Default credentials are:
-- Username: `minioadmin`
-- Password: `minioadmin`
-
-Change these in `.env` before production!
+Change all defaults before production!
 
 ## Features
 
@@ -296,7 +298,10 @@ See `docs/DEPLOYMENT.md` (coming in v1)
 ---
 
 **Can't find your question?** Check:
-- [README.md](../README.md)
-- [QUICKSTART.md](QUICKSTART.md)
-- [SECURITY.md](SECURITY.md)
-- [ROADMAP.md](ROADMAP.md)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Detailed error solutions
+- [QUICKSTART.md](QUICKSTART.md) - Installation guide
+- [API_GUIDE.md](API_GUIDE.md) - API documentation (if available)
+- [SECURITY.md](SECURITY.md) - Security best practices
+- [ROADMAP.md](ROADMAP.md) - Feature planning
+- [README.md](../README.md) - Project overview
+- [CHANGELOG.md](../CHANGELOG.md) - Release history
