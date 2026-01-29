@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -8,6 +8,8 @@ import time
 import redis
 
 from database import engine, Base, get_db
+from fastapi_problem.error import Problem
+from fastapi_problem.handler import add_exception_handler
 from config import settings
 from api import auth, reports, connectors, mappings, validations, schedules, destinations, runs, admin, queries, exceptions, logs, submissions, schemas, dashboard, xbrl, delivery, streaming, lineage, api_keys, workflow, webhooks, external_api
 
@@ -141,6 +143,56 @@ app.add_middleware(RequestContextMiddleware, exclude_paths=["/health", "/ready",
 # Rate limiting middleware
 from middleware.rate_limit import RateLimitMiddleware
 RateLimitMiddleware(app)
+
+# RFC 9457 Problem Details exception handling
+# Register base handlers from fastapi-problem
+add_exception_handler(app)
+
+
+@app.exception_handler(Problem)
+async def problem_exception_handler(request: Request, exc: Problem) -> JSONResponse:
+    """
+    Handle Problem exceptions with request ID enrichment.
+
+    Adds request_id and instance fields for debugging and RFC 9457 compliance.
+    All API errors go through this handler to ensure consistent response format.
+    """
+    # Build response data from exception
+    response_data = {
+        "type": exc._type or "about:blank",
+        "title": exc.title,
+        "status": exc.status,
+        "detail": exc.detail,
+    }
+
+    # Add instance (request path) if not already set
+    response_data["instance"] = str(request.url.path)
+
+    # Add request_id from middleware for debugging
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        response_data["request_id"] = request_id
+
+    # Add any extra fields (e.g., validation errors, retry_after)
+    if hasattr(exc, "extras") and exc.extras:
+        response_data.update(exc.extras)
+
+    # Build response headers
+    headers = {"Content-Type": "application/problem+json"}
+    if request_id:
+        headers["X-Request-ID"] = request_id
+
+    # Add any headers from the exception (e.g., Retry-After)
+    if exc.headers:
+        for key, value in exc.headers.items():
+            headers[key] = value
+
+    return JSONResponse(
+        status_code=exc.status,
+        content=response_data,
+        headers=headers
+    )
+
 
 # Health check endpoint (liveness probe)
 @app.get("/health")
