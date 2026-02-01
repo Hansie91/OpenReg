@@ -508,59 +508,153 @@ class ArtifactGenerator:
     
     # ISO 20022 regulatory message type configurations
     # Used for MiFIR, EMIR, SFTR and other regulatory reports
+    #
+    # IMPORTANT: All packaged regulatory reports MUST use these message types
+    # with proper headers. See .claude/CLAUDE.md for template requirements.
+    #
     REGULATORY_MESSAGE_TYPES = {
-        # MiFIR Transaction Reporting
+        # =====================================================
+        # MiFIR - Markets in Financial Instruments Regulation
+        # =====================================================
         'auth.016': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.016.001.01',
             'message_wrapper': 'FinInstrmRptgTxRpt',
             'row_element': 'Tx',
             'description': 'MiFIR Transaction Report',
-            'regulation': 'MiFIR'
+            'regulation': 'MiFIR',
+            'header_type': 'RptHdr'
         },
         'auth.017': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.017.001.01',
             'message_wrapper': 'FinInstrmRptgTxRptStsAdvc',
             'row_element': 'TxStsAdvc',
             'description': 'MiFIR Transaction Report Status Advice',
-            'regulation': 'MiFIR'
+            'regulation': 'MiFIR',
+            'header_type': 'RptHdr'
         },
-        # EMIR Derivative Reporting
+        'auth.040': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.040.001.01',
+            'message_wrapper': 'FinInstrmRptgRefDataRpt',
+            'row_element': 'RefData',
+            'description': 'MiFIR Reference Data Report',
+            'regulation': 'MiFIR',
+            'header_type': 'RptHdr'
+        },
+        'auth.041': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.041.001.01',
+            'message_wrapper': 'FinInstrmRptgRefDataRptStsAdvc',
+            'row_element': 'RefDataSts',
+            'description': 'MiFIR Reference Data Report Status Advice',
+            'regulation': 'MiFIR',
+            'header_type': 'RptHdr'
+        },
+
+        # =====================================================
+        # EMIR - European Market Infrastructure Regulation
+        # =====================================================
         'auth.030': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.030.001.03',
             'message_wrapper': 'DerivsTradRpt',
             'row_element': 'Trade',
             'description': 'EMIR Derivatives Trade Report',
-            'regulation': 'EMIR'
+            'regulation': 'EMIR',
+            'header_type': 'TxHdr'
         },
         'auth.031': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.031.001.01',
             'message_wrapper': 'DerivsTradRptQry',
             'row_element': 'Qry',
             'description': 'EMIR Derivatives Trade Report Query',
-            'regulation': 'EMIR'
+            'regulation': 'EMIR',
+            'header_type': 'TxHdr'
         },
-        # SFTR Securities Financing Transaction Reporting
+        'auth.032': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.032.001.01',
+            'message_wrapper': 'DerivsTradRptStsAdvc',
+            'row_element': 'TradSts',
+            'description': 'EMIR Derivatives Trade Report Status Advice',
+            'regulation': 'EMIR',
+            'header_type': 'TxHdr'
+        },
+        'auth.036': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.036.001.01',
+            'message_wrapper': 'DerivsTradMrgnDataRpt',
+            'row_element': 'MrgnData',
+            'description': 'EMIR Margin Data Report',
+            'regulation': 'EMIR',
+            'header_type': 'TxHdr'
+        },
+
+        # =====================================================
+        # SFTR - Securities Financing Transactions Regulation
+        # =====================================================
         'auth.052': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.052.001.01',
             'message_wrapper': 'SctiesFincgRptgTxRpt',
             'row_element': 'SFT',
             'description': 'SFTR Securities Financing Transaction Report',
-            'regulation': 'SFTR'
+            'regulation': 'SFTR',
+            'header_type': 'RptHdr'
         },
         'auth.053': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.053.001.01',
             'message_wrapper': 'SctiesFincgRptgTxStsAdvc',
             'row_element': 'TxSts',
             'description': 'SFTR Transaction Status Advice',
-            'regulation': 'SFTR'
+            'regulation': 'SFTR',
+            'header_type': 'RptHdr'
         },
-        # MiFIR Reference Data
-        'auth.040': {
-            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.040.001.01',
-            'message_wrapper': 'FinInstrmRptgRefDataRpt',
-            'row_element': 'RefData',
-            'description': 'MiFIR Reference Data Report',
-            'regulation': 'MiFIR'
+        'auth.070': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.070.001.01',
+            'message_wrapper': 'SctiesFincgRptgMrgnDataRpt',
+            'row_element': 'MrgnData',
+            'description': 'SFTR Margin Data Report',
+            'regulation': 'SFTR',
+            'header_type': 'RptHdr'
+        },
+        'auth.071': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.071.001.01',
+            'message_wrapper': 'SctiesFincgRptgReuseDataRpt',
+            'row_element': 'ReuseData',
+            'description': 'SFTR Reuse Data Report',
+            'regulation': 'SFTR',
+            'header_type': 'RptHdr'
+        },
+
+        # =====================================================
+        # MMF - Money Market Funds Regulation
+        # =====================================================
+        'auth.025': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.025.001.01',
+            'message_wrapper': 'MnyMktFndRpt',
+            'row_element': 'Rpt',
+            'description': 'Money Market Fund Report',
+            'regulation': 'MMF',
+            'header_type': 'RptHdr'
+        },
+
+        # =====================================================
+        # AIFMD - Alternative Investment Fund Managers Directive
+        # =====================================================
+        'auth.045': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.045.001.01',
+            'message_wrapper': 'AIFMRpt',
+            'row_element': 'Fund',
+            'description': 'AIFMD Manager Report',
+            'regulation': 'AIFMD',
+            'header_type': 'RptHdr'
+        },
+
+        # =====================================================
+        # Short Selling Regulation
+        # =====================================================
+        'auth.010': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.010.001.01',
+            'message_wrapper': 'ShrtSellgRpt',
+            'row_element': 'Pos',
+            'description': 'Short Selling Report',
+            'regulation': 'SSR',
+            'header_type': 'RptHdr'
         }
     }
 
