@@ -506,27 +506,66 @@ class ArtifactGenerator:
             logger.error(f"Failed to generate XML: {e}")
             raise
     
-    # MiFIR message type configurations
-    MIFIR_MESSAGE_TYPES = {
+    # ISO 20022 regulatory message type configurations
+    # Used for MiFIR, EMIR, SFTR and other regulatory reports
+    REGULATORY_MESSAGE_TYPES = {
+        # MiFIR Transaction Reporting
         'auth.016': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.016.001.01',
             'message_wrapper': 'FinInstrmRptgTxRpt',
             'row_element': 'Tx',
-            'description': 'Transaction Report'
+            'description': 'MiFIR Transaction Report',
+            'regulation': 'MiFIR'
         },
         'auth.017': {
             'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.017.001.01',
             'message_wrapper': 'FinInstrmRptgTxRptStsAdvc',
             'row_element': 'TxStsAdvc',
-            'description': 'Transaction Report Status Advice'
+            'description': 'MiFIR Transaction Report Status Advice',
+            'regulation': 'MiFIR'
         },
+        # EMIR Derivative Reporting
         'auth.030': {
-            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.030.001.01',
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.030.001.03',
+            'message_wrapper': 'DerivsTradRpt',
+            'row_element': 'Trade',
+            'description': 'EMIR Derivatives Trade Report',
+            'regulation': 'EMIR'
+        },
+        'auth.031': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.031.001.01',
+            'message_wrapper': 'DerivsTradRptQry',
+            'row_element': 'Qry',
+            'description': 'EMIR Derivatives Trade Report Query',
+            'regulation': 'EMIR'
+        },
+        # SFTR Securities Financing Transaction Reporting
+        'auth.052': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.052.001.01',
+            'message_wrapper': 'SctiesFincgRptgTxRpt',
+            'row_element': 'SFT',
+            'description': 'SFTR Securities Financing Transaction Report',
+            'regulation': 'SFTR'
+        },
+        'auth.053': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.053.001.01',
+            'message_wrapper': 'SctiesFincgRptgTxStsAdvc',
+            'row_element': 'TxSts',
+            'description': 'SFTR Transaction Status Advice',
+            'regulation': 'SFTR'
+        },
+        # MiFIR Reference Data
+        'auth.040': {
+            'namespace': 'urn:iso:std:iso:20022:tech:xsd:auth.040.001.01',
             'message_wrapper': 'FinInstrmRptgRefDataRpt',
             'row_element': 'RefData',
-            'description': 'Reference Data Report'
+            'description': 'MiFIR Reference Data Report',
+            'regulation': 'MiFIR'
         }
     }
+
+    # Backwards compatibility alias
+    MIFIR_MESSAGE_TYPES = REGULATORY_MESSAGE_TYPES
 
     @staticmethod
     def _generate_hierarchical_xml(
@@ -1006,25 +1045,26 @@ class ArtifactGenerator:
         if include_declaration:
             lines.append('<?xml version="1.0" encoding="UTF-8"?>')
 
-        # Check if we have MiFIR header config
+        # Check if we have regulatory header config
         if header_config and header_config.get('message_type'):
-            # Use MiFIR-compliant structure
+            # Use regulatory-compliant structure (MiFIR, EMIR, SFTR)
             message_type = header_config.get('message_type', 'auth.016')
-            msg_config = ArtifactGenerator.MIFIR_MESSAGE_TYPES.get(
-                message_type, ArtifactGenerator.MIFIR_MESSAGE_TYPES['auth.016']
+            msg_config = ArtifactGenerator.REGULATORY_MESSAGE_TYPES.get(
+                message_type, ArtifactGenerator.REGULATORY_MESSAGE_TYPES['auth.016']
             )
 
-            ns = msg_config['namespace']
+            ns = header_config.get('namespace') or msg_config['namespace']
             message_wrapper = msg_config['message_wrapper']
             row_element = header_config.get('row_element') or msg_config['row_element']
+            regulation = msg_config.get('regulation', 'MiFIR')
 
-            # Header values
-            reporting_party_lei = header_config.get('reporting_party_lei', '')
-            competent_authority = header_config.get('competent_authority_country', '')
+            # Common header values
             include_record_count = header_config.get('include_record_count', True)
-
             from datetime import date
+            import uuid
             reporting_date = header_config.get('reporting_date') or date.today().isoformat()
+            creation_datetime = datetime.utcnow().isoformat() + 'Z'
+            message_id = header_config.get('message_id') or str(uuid.uuid4())[:35]
 
             # Document root with namespace
             lines.append(f'<Document xmlns="{ns}">')
@@ -1032,24 +1072,90 @@ class ArtifactGenerator:
             # Message wrapper
             lines.append(f'{indent}<{message_wrapper}>')
 
-            # Report Header
-            lines.append(f'{indent}{indent}<RptHdr>')
-            lines.append(f'{indent}{indent}{indent}<RptgDt>{reporting_date}</RptgDt>')
+            # Generate regulation-specific header
+            if regulation == 'MiFIR':
+                # MiFIR Report Header
+                reporting_party_lei = header_config.get('reporting_party_lei', '')
+                competent_authority = header_config.get('competent_authority_country', '')
 
-            if include_record_count:
-                lines.append(f'{indent}{indent}{indent}<NbRcrds>{len(data)}</NbRcrds>')
+                lines.append(f'{indent}{indent}<RptHdr>')
+                lines.append(f'{indent}{indent}{indent}<RptgDt>{reporting_date}</RptgDt>')
 
-            if reporting_party_lei:
-                lines.append(f'{indent}{indent}{indent}<RptgPty>')
-                lines.append(f'{indent}{indent}{indent}{indent}<LEI>{reporting_party_lei}</LEI>')
-                lines.append(f'{indent}{indent}{indent}</RptgPty>')
+                if include_record_count:
+                    lines.append(f'{indent}{indent}{indent}<NbRcrds>{len(data)}</NbRcrds>')
 
-            if competent_authority:
-                lines.append(f'{indent}{indent}{indent}<CmptntAuthrty>')
-                lines.append(f'{indent}{indent}{indent}{indent}<Ctry>{competent_authority}</Ctry>')
-                lines.append(f'{indent}{indent}{indent}</CmptntAuthrty>')
+                if reporting_party_lei:
+                    lines.append(f'{indent}{indent}{indent}<RptgPty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{reporting_party_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</RptgPty>')
 
-            lines.append(f'{indent}{indent}</RptHdr>')
+                if competent_authority:
+                    lines.append(f'{indent}{indent}{indent}<CmptntAuthrty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<Ctry>{competent_authority}</Ctry>')
+                    lines.append(f'{indent}{indent}{indent}</CmptntAuthrty>')
+
+                lines.append(f'{indent}{indent}</RptHdr>')
+
+            elif regulation == 'EMIR':
+                # EMIR Transaction Header
+                reporting_counterparty_lei = header_config.get('reporting_counterparty_lei', '')
+                trade_repository_lei = header_config.get('trade_repository_lei', '')
+                report_submitting_entity_lei = header_config.get('report_submitting_entity_lei', '')
+                action_type = header_config.get('action_type', 'NEWT')
+
+                lines.append(f'{indent}{indent}<TxHdr>')
+                lines.append(f'{indent}{indent}{indent}<MsgId>{message_id}</MsgId>')
+                lines.append(f'{indent}{indent}{indent}<CreDtTm>{creation_datetime}</CreDtTm>')
+
+                if include_record_count:
+                    lines.append(f'{indent}{indent}{indent}<NbOfTxs>{len(data)}</NbOfTxs>')
+
+                if reporting_counterparty_lei:
+                    lines.append(f'{indent}{indent}{indent}<RptgCtrPty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{reporting_counterparty_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</RptgCtrPty>')
+
+                if report_submitting_entity_lei:
+                    lines.append(f'{indent}{indent}{indent}<RptSubmitgNtty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{report_submitting_entity_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</RptSubmitgNtty>')
+
+                if trade_repository_lei:
+                    lines.append(f'{indent}{indent}{indent}<TradRpstry>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{trade_repository_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</TradRpstry>')
+
+                lines.append(f'{indent}{indent}</TxHdr>')
+
+            elif regulation == 'SFTR':
+                # SFTR Report Header
+                reporting_counterparty_lei = header_config.get('reporting_counterparty_lei', '')
+                trade_repository_lei = header_config.get('trade_repository_lei', '')
+                report_submitting_entity_lei = header_config.get('report_submitting_entity_lei', '')
+
+                lines.append(f'{indent}{indent}<RptHdr>')
+                lines.append(f'{indent}{indent}{indent}<MsgId>{message_id}</MsgId>')
+                lines.append(f'{indent}{indent}{indent}<CreDtTm>{creation_datetime}</CreDtTm>')
+
+                if include_record_count:
+                    lines.append(f'{indent}{indent}{indent}<NbOfTxs>{len(data)}</NbOfTxs>')
+
+                if reporting_counterparty_lei:
+                    lines.append(f'{indent}{indent}{indent}<RptgCtrPty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{reporting_counterparty_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</RptgCtrPty>')
+
+                if report_submitting_entity_lei:
+                    lines.append(f'{indent}{indent}{indent}<RptSubmitgNtty>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{report_submitting_entity_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</RptSubmitgNtty>')
+
+                if trade_repository_lei:
+                    lines.append(f'{indent}{indent}{indent}<TradRpstry>')
+                    lines.append(f'{indent}{indent}{indent}{indent}<LEI>{trade_repository_lei}</LEI>')
+                    lines.append(f'{indent}{indent}{indent}</TradRpstry>')
+
+                lines.append(f'{indent}{indent}</RptHdr>')
 
             # Process each row as a transaction
             for idx, row in data.iterrows():

@@ -1,94 +1,550 @@
 {
   "id": "mifir-rts25-v1",
   "name": "MiFIR RTS 25 Transaction Report",
-  "description": "Daily transaction reporting per MiFIR RTS 25 requirements. Covers equity, bond, and derivative transactions.",
+  "description": "Daily transaction reporting per MiFIR RTS 25 requirements. Complete 65-field specification covering all transaction details.",
   "regulation": "MiFIR",
   "version": "1.0.0",
   "category": "transaction_reporting",
   "config": {
     "mode": "simple",
     "output_format": "xml",
-    "output_filename_template": "MiFIR_{business_date}_{sequence}",
+    "output_filename_template": "MIFIR_{business_date_from}_{job_run_id}",
+    "query_sql": "SELECT * FROM vw_cdm_trade_data WHERE trade_date = '{business_date_from}'::date ORDER BY execution_timestamp",
+    "xml": {
+      "pretty_print": true,
+      "include_declaration": true,
+      "root_element": "Document",
+      "row_element": "Tx",
+      "header": {
+        "message_type": "auth.016",
+        "description": "MiFIR Transaction Report (auth.016.001.01)",
+        "namespace": "urn:iso:std:iso:20022:tech:xsd:auth.016.001.01",
+        "include_record_count": true,
+        "include_pagination": false,
+        "reporting_party_lei": "",
+        "competent_authority_country": ""
+      }
+    },
     "field_mappings": [
       {
-        "sourceColumn": "transaction_id",
-        "targetXPath": "/Report/Transaction/TxId",
+        "sourceColumn": "transaction_reference_number",
+        "targetXPath": "/Report/Tx/TxId",
         "transform": "",
         "defaultValue": "",
         "required": true,
-        "documentation": "Unique transaction identifier"
+        "documentation": "Field 1: Unique transaction reference number"
       },
       {
-        "sourceColumn": "execution_timestamp",
-        "targetXPath": "/Report/Transaction/TradDt",
-        "transform": "DATE_ISO",
+        "sourceColumn": "trading_venue_transaction_id",
+        "targetXPath": "/Report/Tx/TradVnTxId",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 2: Trading venue transaction identification code"
+      },
+      {
+        "sourceColumn": "executing_entity_id_code",
+        "targetXPath": "/Report/Tx/ExctgPty",
+        "transform": "UPPER",
         "defaultValue": "",
         "required": true,
-        "documentation": "Trade execution date and time"
+        "documentation": "Field 3: Executing entity identification code (LEI)"
+      },
+      {
+        "sourceColumn": "investment_firm_covered_mifid",
+        "targetXPath": "/Report/Tx/InvstmtPtyInd",
+        "transform": "BOOLEAN_TF",
+        "defaultValue": "true",
+        "required": true,
+        "documentation": "Field 4: Investment firm indicator"
+      },
+      {
+        "sourceColumn": "buyer_id_code_type",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/Id/Tp",
+        "transform": "",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 5: Buyer identification code type"
+      },
+      {
+        "sourceColumn": "buyer_id_code",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/Id/Id",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 6: Buyer identification code"
+      },
+      {
+        "sourceColumn": "buyer_country_of_branch",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 7: Country of the branch for the buyer"
+      },
+      {
+        "sourceColumn": "buyer_first_name",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/FrstNm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 8: Buyer first name(s)"
+      },
+      {
+        "sourceColumn": "buyer_surname",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/Nm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 9: Buyer surname(s)"
+      },
+      {
+        "sourceColumn": "buyer_date_of_birth",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/BirthDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 10: Buyer date of birth"
       },
       {
         "sourceColumn": "buyer_lei",
-        "targetXPath": "/Report/Transaction/Buyr/LEI",
+        "targetXPath": "/Report/Tx/Buyr/AcctOwnr/LEI",
         "transform": "UPPER",
         "defaultValue": "",
-        "required": true,
-        "documentation": "LEI of the buyer"
+        "required": false,
+        "documentation": "Field 11: Buyer LEI code"
       },
       {
-        "sourceColumn": "seller_lei",
-        "targetXPath": "/Report/Transaction/Sellr/LEI",
+        "sourceColumn": "buyer_decision_maker_code",
+        "targetXPath": "/Report/Tx/Buyr/DcsnMkr/Id",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 12: Buyer decision maker code"
+      },
+      {
+        "sourceColumn": "buyer_decision_maker_country",
+        "targetXPath": "/Report/Tx/Buyr/DcsnMkr/CtryOfBrnch",
         "transform": "UPPER",
         "defaultValue": "",
-        "required": true,
-        "documentation": "LEI of the seller"
+        "required": false,
+        "documentation": "Field 13: Country of the branch for buyer decision maker"
       },
       {
-        "sourceColumn": "instrument_isin",
-        "targetXPath": "/Report/Transaction/FinInstrm/ISIN",
-        "transform": "UPPER",
+        "sourceColumn": "buyer_decision_maker_first_name",
+        "targetXPath": "/Report/Tx/Buyr/DcsnMkr/FrstNm",
+        "transform": "",
         "defaultValue": "",
-        "required": true,
-        "documentation": "ISIN of the financial instrument"
+        "required": false,
+        "documentation": "Field 14: Buyer decision maker first name"
       },
       {
-        "sourceColumn": "quantity",
-        "targetXPath": "/Report/Transaction/Qty",
-        "transform": "DECIMAL_4",
+        "sourceColumn": "buyer_decision_maker_surname",
+        "targetXPath": "/Report/Tx/Buyr/DcsnMkr/Nm",
+        "transform": "",
         "defaultValue": "",
-        "required": true,
-        "documentation": "Quantity traded"
+        "required": false,
+        "documentation": "Field 15: Buyer decision maker surname"
       },
       {
-        "sourceColumn": "price",
-        "targetXPath": "/Report/Transaction/Pric/Amt",
-        "transform": "DECIMAL_4",
+        "sourceColumn": "buyer_decision_maker_dob",
+        "targetXPath": "/Report/Tx/Buyr/DcsnMkr/BirthDt",
+        "transform": "DATE_ISO",
         "defaultValue": "",
-        "required": true,
-        "documentation": "Transaction price"
+        "required": false,
+        "documentation": "Field 16: Buyer decision maker date of birth"
       },
       {
-        "sourceColumn": "price_currency",
-        "targetXPath": "/Report/Transaction/Pric/Ccy",
-        "transform": "UPPER",
-        "defaultValue": "EUR",
-        "required": true,
-        "documentation": "Price currency (ISO 4217)"
-      },
-      {
-        "sourceColumn": "venue_mic",
-        "targetXPath": "/Report/Transaction/TradVn/MIC",
-        "transform": "UPPER",
-        "defaultValue": "",
-        "required": true,
-        "documentation": "MIC code of trading venue"
-      },
-      {
-        "sourceColumn": "transaction_type",
-        "targetXPath": "/Report/Transaction/TxTp",
+        "sourceColumn": "seller_id_code_type",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/Id/Tp",
         "transform": "",
         "defaultValue": "",
         "required": true,
-        "documentation": "Transaction type code"
+        "documentation": "Field 17: Seller identification code type"
+      },
+      {
+        "sourceColumn": "seller_id_code",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/Id/Id",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 18: Seller identification code"
+      },
+      {
+        "sourceColumn": "seller_country_of_branch",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 19: Country of the branch for the seller"
+      },
+      {
+        "sourceColumn": "seller_first_name",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/FrstNm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 20: Seller first name(s)"
+      },
+      {
+        "sourceColumn": "seller_surname",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/Nm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 21: Seller surname(s)"
+      },
+      {
+        "sourceColumn": "seller_date_of_birth",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/BirthDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 22: Seller date of birth"
+      },
+      {
+        "sourceColumn": "seller_lei",
+        "targetXPath": "/Report/Tx/Sellr/AcctOwnr/LEI",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 23: Seller LEI code"
+      },
+      {
+        "sourceColumn": "seller_decision_maker_code",
+        "targetXPath": "/Report/Tx/Sellr/DcsnMkr/Id",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 24: Seller decision maker code"
+      },
+      {
+        "sourceColumn": "seller_decision_maker_country",
+        "targetXPath": "/Report/Tx/Sellr/DcsnMkr/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 25: Country of the branch for seller decision maker"
+      },
+      {
+        "sourceColumn": "seller_decision_maker_first_name",
+        "targetXPath": "/Report/Tx/Sellr/DcsnMkr/FrstNm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 26: Seller decision maker first name"
+      },
+      {
+        "sourceColumn": "seller_decision_maker_surname",
+        "targetXPath": "/Report/Tx/Sellr/DcsnMkr/Nm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 27: Seller decision maker surname"
+      },
+      {
+        "sourceColumn": "seller_decision_maker_dob",
+        "targetXPath": "/Report/Tx/Sellr/DcsnMkr/BirthDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 28: Seller decision maker date of birth"
+      },
+      {
+        "sourceColumn": "transmission_of_order_indicator",
+        "targetXPath": "/Report/Tx/OrdrTrnsmssn/TrnsmssnInd",
+        "transform": "BOOLEAN_TF",
+        "defaultValue": "false",
+        "required": true,
+        "documentation": "Field 29: Transmission of order indicator"
+      },
+      {
+        "sourceColumn": "transmitting_firm_id_buyer",
+        "targetXPath": "/Report/Tx/OrdrTrnsmssn/TrnsmttgBuyr",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 30: Transmitting firm identification code for the buyer"
+      },
+      {
+        "sourceColumn": "transmitting_firm_id_seller",
+        "targetXPath": "/Report/Tx/OrdrTrnsmssn/TrnsmttgSellr",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 31: Transmitting firm identification code for the seller"
+      },
+      {
+        "sourceColumn": "trading_date_time",
+        "targetXPath": "/Report/Tx/TradDt",
+        "transform": "DATE_ISO",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 32: Trading date and time"
+      },
+      {
+        "sourceColumn": "trading_capacity",
+        "targetXPath": "/Report/Tx/TradgCpcty",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 33: Trading capacity (DEAL, MTCH, AOTC)"
+      },
+      {
+        "sourceColumn": "quantity",
+        "targetXPath": "/Report/Tx/Qty",
+        "transform": "DECIMAL_4",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 34: Quantity"
+      },
+      {
+        "sourceColumn": "quantity_currency",
+        "targetXPath": "/Report/Tx/QtyCcy",
+        "transform": "UPPER",
+        "defaultValue": "UNIT",
+        "required": false,
+        "documentation": "Field 35: Quantity currency"
+      },
+      {
+        "sourceColumn": "derivative_notional_change",
+        "targetXPath": "/Report/Tx/DerivNtnlChng",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 36: Derivative notional increase/decrease"
+      },
+      {
+        "sourceColumn": "price",
+        "targetXPath": "/Report/Tx/Pric/Amt",
+        "transform": "DECIMAL_4",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 37: Price"
+      },
+      {
+        "sourceColumn": "price_currency",
+        "targetXPath": "/Report/Tx/Pric/Ccy",
+        "transform": "UPPER",
+        "defaultValue": "EUR",
+        "required": true,
+        "documentation": "Field 38: Price currency"
+      },
+      {
+        "sourceColumn": "net_amount",
+        "targetXPath": "/Report/Tx/NetAmt",
+        "transform": "DECIMAL_2",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 39: Net amount"
+      },
+      {
+        "sourceColumn": "venue",
+        "targetXPath": "/Report/Tx/TradVn",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 40: Venue (MIC code)"
+      },
+      {
+        "sourceColumn": "country_of_branch_membership",
+        "targetXPath": "/Report/Tx/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 41: Country of the branch membership"
+      },
+      {
+        "sourceColumn": "upfront_payment",
+        "targetXPath": "/Report/Tx/UpFrntPmt/Amt",
+        "transform": "DECIMAL_2",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 42: Up-front payment"
+      },
+      {
+        "sourceColumn": "upfront_payment_currency",
+        "targetXPath": "/Report/Tx/UpFrntPmt/Ccy",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 43: Up-front payment currency"
+      },
+      {
+        "sourceColumn": "instrument_id_code_type",
+        "targetXPath": "/Report/Tx/FinInstrm/Id/Tp",
+        "transform": "UPPER",
+        "defaultValue": "ISIN",
+        "required": true,
+        "documentation": "Field 44: Instrument identification code type"
+      },
+      {
+        "sourceColumn": "instrument_id_code",
+        "targetXPath": "/Report/Tx/FinInstrm/Id/Id",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 45: Instrument identification code (ISIN)"
+      },
+      {
+        "sourceColumn": "instrument_full_name",
+        "targetXPath": "/Report/Tx/FinInstrm/FullNm",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 46: Instrument full name"
+      },
+      {
+        "sourceColumn": "instrument_classification",
+        "targetXPath": "/Report/Tx/FinInstrm/ClssfctnTp",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 47: Instrument classification (CFI code)"
+      },
+      {
+        "sourceColumn": "notional_currency_1",
+        "targetXPath": "/Report/Tx/FinInstrm/NtnlCcy1",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 48: Notional currency 1"
+      },
+      {
+        "sourceColumn": "notional_currency_2",
+        "targetXPath": "/Report/Tx/FinInstrm/NtnlCcy2",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 49: Notional currency 2"
+      },
+      {
+        "sourceColumn": "price_multiplier",
+        "targetXPath": "/Report/Tx/FinInstrm/PricMltplr",
+        "transform": "DECIMAL_4",
+        "defaultValue": "1",
+        "required": false,
+        "documentation": "Field 50: Price multiplier"
+      },
+      {
+        "sourceColumn": "underlying_instrument_code",
+        "targetXPath": "/Report/Tx/FinInstrm/UndrlygInstrm",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 51: Underlying instrument code"
+      },
+      {
+        "sourceColumn": "underlying_index_name",
+        "targetXPath": "/Report/Tx/FinInstrm/UndrlygIndx",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 52: Underlying index name"
+      },
+      {
+        "sourceColumn": "underlying_index_term",
+        "targetXPath": "/Report/Tx/FinInstrm/UndrlygIndxTrm",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 53: Term of the underlying index"
+      },
+      {
+        "sourceColumn": "investment_decision_within_firm",
+        "targetXPath": "/Report/Tx/InvstmtDcsnPrsn/Id",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 54: Investment decision within firm"
+      },
+      {
+        "sourceColumn": "investment_decision_country",
+        "targetXPath": "/Report/Tx/InvstmtDcsnPrsn/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 55: Country of the branch supervising investment decision"
+      },
+      {
+        "sourceColumn": "execution_within_firm",
+        "targetXPath": "/Report/Tx/ExctnPrsn/Id",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 56: Execution within firm"
+      },
+      {
+        "sourceColumn": "execution_country",
+        "targetXPath": "/Report/Tx/ExctnPrsn/CtryOfBrnch",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 57: Country of the branch supervising execution"
+      },
+      {
+        "sourceColumn": "waiver_indicator",
+        "targetXPath": "/Report/Tx/WvrInd",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 58: Waiver indicator"
+      },
+      {
+        "sourceColumn": "short_selling_indicator",
+        "targetXPath": "/Report/Tx/ShrtSellgInd",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 59: Short selling indicator"
+      },
+      {
+        "sourceColumn": "otc_post_trade_indicator",
+        "targetXPath": "/Report/Tx/OTCPstTradInd",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 60: OTC post-trade indicator"
+      },
+      {
+        "sourceColumn": "commodity_derivative_indicator",
+        "targetXPath": "/Report/Tx/CmmdtyDerivInd",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 61: Commodity derivative indicator"
+      },
+      {
+        "sourceColumn": "securities_financing_transaction_indicator",
+        "targetXPath": "/Report/Tx/SctiesFincgTxInd",
+        "transform": "BOOLEAN_TF",
+        "defaultValue": "false",
+        "required": false,
+        "documentation": "Field 62: Securities financing transaction indicator"
+      },
+      {
+        "sourceColumn": "report_status",
+        "targetXPath": "/Report/Tx/RptSts",
+        "transform": "UPPER",
+        "defaultValue": "NEWT",
+        "required": true,
+        "documentation": "Field 63: Report status (NEWT, CANC, AMND)"
+      },
+      {
+        "sourceColumn": "linked_transaction_reference",
+        "targetXPath": "/Report/Tx/LkTxId",
+        "transform": "",
+        "defaultValue": "",
+        "required": false,
+        "documentation": "Field 64: Linked transaction reference (for CANC/AMND)"
+      },
+      {
+        "sourceColumn": "submitting_entity_id_code",
+        "targetXPath": "/Report/Tx/SubmitgPty",
+        "transform": "UPPER",
+        "defaultValue": "",
+        "required": true,
+        "documentation": "Field 65: Submitting entity identification code (LEI)"
       }
     ],
     "recommended_validations": [
@@ -96,7 +552,12 @@
       "isin_format",
       "mic_format",
       "quantity_positive",
-      "price_positive"
+      "price_positive",
+      "trading_capacity_valid",
+      "report_status_valid",
+      "country_code_valid",
+      "currency_code_valid",
+      "date_format_valid"
     ]
   },
   "documentation_url": "https://docs.openreg.io/templates/mifir"

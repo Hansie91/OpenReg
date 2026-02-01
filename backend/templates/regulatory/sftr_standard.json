@@ -8,7 +8,24 @@
   "config": {
     "mode": "simple",
     "output_format": "xml",
-    "output_filename_template": "SFTR_{business_date}_{sequence}",
+    "output_filename_template": "SFTR_{business_date_from}_{job_run_id}",
+    "query_sql": "SELECT * FROM vw_cdm_sft_data WHERE trade_date = '{business_date_from}'::date ORDER BY execution_timestamp",
+    "xml": {
+      "pretty_print": true,
+      "include_declaration": true,
+      "root_element": "Document",
+      "row_element": "SFT",
+      "header": {
+        "message_type": "auth.052",
+        "description": "SFTR Securities Financing Transaction Report (auth.052.001.01)",
+        "namespace": "urn:iso:std:iso:20022:tech:xsd:auth.052.001.01",
+        "include_record_count": true,
+        "include_pagination": false,
+        "reporting_counterparty_lei": "",
+        "trade_repository_lei": "",
+        "report_submitting_entity_lei": ""
+      }
+    },
     "field_mappings": [
       {
         "sourceColumn": "uti",

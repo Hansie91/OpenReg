@@ -8,7 +8,25 @@
   "config": {
     "mode": "simple",
     "output_format": "xml",
-    "output_filename_template": "EMIR_{business_date}_{sequence}",
+    "output_filename_template": "EMIR_{business_date_from}_{job_run_id}",
+    "query_sql": "SELECT * FROM vw_cdm_derivative_data WHERE trade_date = '{business_date_from}'::date ORDER BY execution_timestamp",
+    "xml": {
+      "pretty_print": true,
+      "include_declaration": true,
+      "root_element": "Document",
+      "row_element": "Trade",
+      "header": {
+        "message_type": "auth.030",
+        "description": "EMIR Derivative Trade Report (auth.030.001.03)",
+        "namespace": "urn:iso:std:iso:20022:tech:xsd:auth.030.001.03",
+        "include_record_count": true,
+        "include_pagination": false,
+        "reporting_counterparty_lei": "",
+        "trade_repository_lei": "",
+        "report_submitting_entity_lei": "",
+        "action_type": "NEWT"
+      }
+    },
     "field_mappings": [
       {
         "sourceColumn": "uti",
