@@ -372,149 +372,226 @@ PENDING → INITIALIZING → FETCHING_DATA → PRE_VALIDATION → TRANSFORMING �
 
 ## 🌍 Supported Regulations
 
-OpenReg provides **production-ready report templates** with pre-configured field mappings, comprehensive validation rules, and ISO 20022 XML schemas for major regulatory regimes.
+OpenReg provides **11 production-ready regulation packages** with pre-configured field mappings, comprehensive validation rules, and ISO 20022 XML schemas covering major global jurisdictions.
 
-### Packaged Report Templates
+### Global Coverage at a Glance
+
+| Region | Regulations | Total Fields | Total Validations |
+|--------|-------------|--------------|-------------------|
+| **European Union** | EMIR, MiFIR, SFTR | 305 | 140 |
+| **United Kingdom** | UK EMIR | 203 | 42 |
+| **United States** | CFTC | 128 | 40 |
+| **Asia Pacific** | JFSA, MAS, ASIC, HKMA | 410 | 118 |
+| **Americas** | Canada (OSC/AMF) | 95 | 25 |
+| **Europe** | Swiss FMIA | 90 | 22 |
+
+---
+
+### European Union
+
+#### EMIR REFIT — OTC Derivatives Reporting
+
+| | |
+|---|---|
+| **Package ID** | `emir-refit-2024` |
+| **Authority** | ESMA |
+| **Effective** | April 29, 2024 |
+| **Message Type** | `auth.030.001.03` |
+| **Total Fields** | 203 (128 mandatory, 62 conditional, 13 optional) |
+| **Validations** | 45 rules |
+| **Report Types** | Trade State, Position, Valuation, Margin |
+
+**Coverage:** Complete 203-field REFIT specification across 4 report types. Counterparty data, contract details, clearing, collateral, valuations, and margins for OTC and exchange-traded derivatives.
+
+---
 
 #### MiFIR RTS 25 — Transaction Reporting
 
 | | |
 |---|---|
-| **Template ID** | `mifir-rts25-v1` |
-| **Message Type** | `auth.016.001.01` (FinInstrmRptgTxRpt) |
-| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.016.001.01` |
-| **Fields** | 65 mapped fields covering complete RTS 25 specification |
-| **Validations** | 35 rules including LEI checksum, ISIN validation, MIC codes |
+| **Package ID** | `mifir-rts25-2024` |
+| **Authority** | National Competent Authorities (NCAs) |
+| **Effective** | January 1, 2024 |
+| **Message Type** | `auth.016.001.01` |
+| **Total Fields** | 65 (38 mandatory, 20 conditional, 7 optional) |
+| **Validations** | 45 rules |
 
-**Coverage:** Transaction reference, executing entity, buyer/seller details, instrument identification (ISIN/CFI), trading venue (MIC), price/quantity, trading capacity, waiver indicators, short selling flags.
-
-<details>
-<summary>View validation rules</summary>
-
-- LEI format and checksum validation (ISO 17442)
-- ISIN format and checksum validation (ISO 6166)
-- MIC code validation (ISO 10383)
-- Currency code validation (ISO 4217)
-- Country code validation (ISO 3166-1)
-- CFI code format validation (ISO 10962)
-- Trading capacity values (DEAL, MTCH, AOTC)
-- Report status values (NEWT, CANC, AMND)
-- Buyer/seller differentiation check
-- T+1 reporting deadline warnings
-- Price and quantity range checks
-
-</details>
+**Coverage:** Complete 65-field RTS 25 specification. Transaction reference, executing/submitting entities, buyer/seller details, instrument identification (ISIN/CFI), trading venue (MIC), price/quantity, trading capacity, waiver indicators.
 
 ---
 
-#### EMIR REFIT — Derivative Trade Reporting
+#### SFTR — Securities Financing Transactions
 
 | | |
 |---|---|
-| **Template ID** | `emir-refit-v1` |
-| **Message Type** | `auth.030.001.03` (DerivsTradRpt) |
-| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.030.001.03` |
-| **Fields** | Full EMIR REFIT field coverage for OTC and ETD |
-| **Validations** | 42 rules covering counterparty, UTI, dates, amounts |
+| **Package ID** | `sftr-2024` |
+| **Authority** | ESMA / NCAs |
+| **Effective** | January 1, 2024 |
+| **Message Type** | `auth.052.001.01` |
+| **Total Fields** | 155+ across report types |
+| **Validations** | 50 rules |
+| **Report Types** | New, Modification, Collateral, Valuation, Margin, Reuse |
 
-**Coverage:** UTI (ISO 23897), counterparty LEIs, trade/effective/maturity dates, notional amounts, asset class, contract type, clearing status, collateralization, valuation, margins.
-
-<details>
-<summary>View validation rules</summary>
-
-- UTI format validation (1-52 alphanumeric, LEI prefix)
-- Counterparty LEI format and checksum
-- Counterparties must be different entities
-- Date sequence validation (trade ≤ effective ≤ maturity)
-- Asset class values (INTR, CRDT, EQUI, COMM, CURR)
-- Contract type values (SWAP, FRAS, FUTR, OPTN, etc.)
-- Action type values (NEWT, MODI, CORR, TERM, EROR, etc.)
-- CCP LEI required when cleared = Y
-- Prior UTI required for lifecycle events
-- Financial counterparty sector codes
-- Collateralization type validation
-- T+1 reporting deadline warnings
-
-</details>
+**Coverage:** Repos, securities lending, buy-sell backs, margin lending. UTI, counterparties, SFT type, collateral ISIN, principal amounts, repo rates, haircuts, tri-party agents.
 
 ---
 
-#### SFTR — Securities Financing Transaction Reporting
+### United Kingdom
+
+#### UK EMIR — Post-Brexit Derivatives Reporting
 
 | | |
 |---|---|
-| **Template ID** | `sftr-standard-v1` |
-| **Message Type** | `auth.052.001.01` (SctiesFincgRptgTxRpt) |
-| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.052.001.01` |
-| **Fields** | Complete SFTR field set for repos, securities lending, margin lending |
-| **Validations** | 50 rules covering SFT-specific requirements |
+| **Package ID** | `uk-emir-2024` |
+| **Authority** | FCA |
+| **Effective** | September 30, 2024 |
+| **Message Type** | ISO 20022 XML |
+| **Total Fields** | 203 (130 mandatory, 55 conditional, 18 optional) |
+| **Validations** | 42 rules |
+| **Report Types** | Trade State, Position, Valuation, Margin |
 
-**Coverage:** UTI, counterparty LEIs, SFT type (REPO, SLEB, BSBC, MGLD), execution/value/maturity dates, collateral ISIN, principal amount, repo rate, lending fees, haircuts, margins.
-
-<details>
-<summary>View validation rules</summary>
-
-- UTI format validation (ISO 23897)
-- Counterparty LEI validation
-- SFT type values (REPO, SLEB, BSBC, MGLD)
-- Collateral ISIN format and checksum
-- Date sequence validation
-- Action type values (NEWT, MODI, VALU, COLU, ETRM, etc.)
-- CCP LEI required when cleared
-- Prior UTI required for lifecycle events
-- Repo rate required for REPO type
-- Lending fee/rebate required for SLEB type
-- Security ISIN required for securities lending
-- Haircut percentage range (0-100%)
-- Tri-party agent LEI for tri-party transactions
-- Floating rate reference codes (ESTR, SONIA, SOFR, etc.)
-- T+1 reporting deadline warnings
-
-</details>
+**Coverage:** UK-specific EMIR requirements aligned with EU REFIT but with FCA-specific validations and submission requirements.
 
 ---
 
-### Regulation Summary
+### United States
 
-#### European Union
+#### CFTC — Swap Data Reporting
 
-| Regulation | Template | Message Type | Fields | Validations |
-|------------|----------|--------------|--------|-------------|
-| **MiFIR RTS 25** | `mifir-rts25-v1` | auth.016 | 65 | 35 |
-| **EMIR REFIT** | `emir-refit-v1` | auth.030 | 50+ | 42 |
-| **SFTR** | `sftr-standard-v1` | auth.052 | 40+ | 50 |
+| | |
+|---|---|
+| **Package ID** | `cftc-rewrite-2024` |
+| **Authority** | CFTC |
+| **Effective** | January 29, 2024 |
+| **Format** | ISO 20022 XML |
+| **Total Fields** | 128 (85 mandatory, 30 conditional, 13 optional) |
+| **Validations** | 40 rules |
+| **Report Types** | Creation, Continuation, State, Valuation |
 
-#### United Kingdom
+**Coverage:** Part 43 (real-time) and Part 45 (regulatory) swap data reporting. USI, LEIs, swap economics, clearing status, collateral, valuations.
 
-UK variants use the same templates with jurisdiction-specific configuration:
+---
 
-| Regulation | Base Template | Competent Authority |
-|------------|---------------|---------------------|
-| **UK MiFIR** | `mifir-rts25-v1` | FCA |
-| **UK EMIR** | `emir-refit-v1` | FCA/BoE |
-| **UK SFTR** | `sftr-standard-v1` | FCA |
+### Asia Pacific
 
-### Planned Support
+#### JFSA — Japan OTC Derivatives
 
-| Regulation | Jurisdiction | Timeline | Notes |
-|------------|--------------|----------|-------|
-| **CFTC Rewrite** | United States | Q2 2026 | Swap data reporting |
-| **SEC CAT** | United States | Q3 2026 | Consolidated audit trail |
-| **MAS Reporting** | Singapore | Q4 2026 | OTC derivatives |
-| **ASIC Reporting** | Australia | 2027 | Derivative transaction reporting |
+| | |
+|---|---|
+| **Package ID** | `jfsa-2024` |
+| **Authority** | Japan Financial Services Agency |
+| **Effective** | April 1, 2024 |
+| **Total Fields** | 95 (65 mandatory, 22 conditional, 8 optional) |
+| **Validations** | 35 rules |
+| **Report Types** | Trade, Position, Valuation |
 
-### What's Included in Each Template
+---
 
-Every packaged report template includes:
+#### MAS — Singapore OTC Derivatives
+
+| | |
+|---|---|
+| **Package ID** | `mas-2024` |
+| **Authority** | Monetary Authority of Singapore |
+| **Effective** | October 21, 2024 |
+| **Total Fields** | 105 (72 mandatory, 25 conditional, 8 optional) |
+| **Validations** | 28 rules |
+| **Report Types** | Trade, Position, Valuation |
+
+---
+
+#### ASIC — Australia Derivatives
+
+| | |
+|---|---|
+| **Package ID** | `asic-2024` |
+| **Authority** | Australian Securities and Investments Commission |
+| **Effective** | October 21, 2024 |
+| **Total Fields** | 110 (75 mandatory, 28 conditional, 7 optional) |
+| **Validations** | 30 rules |
+| **Report Types** | Trade, Position, Valuation |
+
+---
+
+#### HKMA — Hong Kong OTC Derivatives
+
+| | |
+|---|---|
+| **Package ID** | `hkma-2025` |
+| **Authority** | Hong Kong Monetary Authority |
+| **Effective** | September 29, 2025 |
+| **Total Fields** | 100 (68 mandatory, 24 conditional, 8 optional) |
+| **Validations** | 25 rules |
+| **Report Types** | Trade, Position, Valuation |
+| **Status** | 🔜 Coming September 2025 |
+
+---
+
+### Americas
+
+#### OSC/AMF — Canada Derivatives
+
+| | |
+|---|---|
+| **Package ID** | `canada-2025` |
+| **Authority** | Canadian Securities Administrators (OSC, AMF) |
+| **Effective** | July 25, 2025 |
+| **Format** | DTCC Harmonized XML |
+| **Total Fields** | 95 (62 mandatory, 25 conditional, 8 optional) |
+| **Validations** | 25 rules |
+| **Report Types** | Trade, Position, Valuation |
+| **Status** | 🔜 Coming July 2025 |
+
+---
+
+### Europe (Non-EU)
+
+#### Swiss FMIA — Switzerland Derivatives
+
+| | |
+|---|---|
+| **Package ID** | `swiss-fmia-2025` |
+| **Authority** | FINMA |
+| **Effective** | December 1, 2025 |
+| **Total Fields** | 90 (60 mandatory, 22 conditional, 8 optional) |
+| **Validations** | 22 rules |
+| **Report Types** | Trade, Position, Valuation |
+| **Status** | 🔜 Coming December 2025 |
+
+---
+
+### Package Summary
+
+| Package | Code | Jurisdiction | Authority | Fields | Validations | Status |
+|---------|------|--------------|-----------|--------|-------------|--------|
+| EMIR REFIT | `EMIR` | EU | ESMA | 203 | 45 | ✅ Live |
+| MiFIR RTS 25 | `MIFIR` | EU | NCAs | 65 | 45 | ✅ Live |
+| SFTR | `SFTR` | EU | ESMA | 155+ | 50 | ✅ Live |
+| UK EMIR | `UK_EMIR` | GB | FCA | 203 | 42 | ✅ Live |
+| CFTC | `CFTC` | US | CFTC | 128 | 40 | ✅ Live |
+| JFSA | `JFSA` | JP | JFSA | 95 | 35 | ✅ Live |
+| MAS | `MAS` | SG | MAS | 105 | 28 | ✅ Live |
+| ASIC | `ASIC` | AU | ASIC | 110 | 30 | ✅ Live |
+| HKMA | `HKMA` | HK | HKMA | 100 | 25 | 🔜 Sep 2025 |
+| Canada | `OSC_AMF` | CA | CSA | 95 | 25 | 🔜 Jul 2025 |
+| Swiss FMIA | `FMIA` | CH | FINMA | 90 | 22 | 🔜 Dec 2025 |
+
+---
+
+### What's Included in Each Package
+
+Every regulation package includes:
 
 | Component | Description |
 |-----------|-------------|
-| **Field Mappings** | Complete mapping from CDM fields to XML elements with XPath |
-| **Transformations** | Data type conversions (dates, decimals, booleans, uppercase) |
-| **Validation Rules** | Blocking, warning, and correctable validations |
-| **XML Configuration** | ISO 20022 namespace, message type, header structure |
-| **Default Values** | Sensible defaults for optional fields |
-| **Documentation** | Field-level documentation referencing regulatory specs |
+| **Complete Field Specs** | All mandatory, conditional, and optional fields with data types |
+| **CDM Mappings** | ISDA CDM path mappings for each field |
+| **XML Element Mappings** | Target XPath for ISO 20022 output generation |
+| **Validation Rules** | Format, checksum, range, and cross-field validations |
+| **Condition Logic** | Structured expressions for conditional field requirements |
+| **Transformation Rules** | Data type conversions (dates, decimals, booleans, enums) |
+| **Report Types** | Support for multiple report types per regulation |
+| **Action Types** | NEWT, MODI, CORR, TERM, VALU, POSC, etc. |
 | **Sample Data** | Test datasets for validation and UAT |
 | **DQI Package** | Pre-configured Data Quality Indicators |
 
