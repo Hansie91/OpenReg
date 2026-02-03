@@ -58,6 +58,7 @@ class ScheduledReportSummary(BaseModel):
     schedule_id: Optional[UUID] = None
     schedule_name: Optional[str] = None
     cron_expression: Optional[str] = None
+    next_run_at: Optional[datetime] = None  # When the next run is scheduled
     job_run_id: Optional[UUID] = None
     status: str  # pending, running, success, failed, partial
     triggered_by: Optional[str] = None
@@ -141,10 +142,47 @@ async def get_daily_summary(
     tenant_id = current_user.tenant_id
     
     # === Get all schedules with their reports ===
+    # 1. Get legacy schedules from Schedule table
     schedules = db.query(models.Schedule).filter(
         models.Schedule.tenant_id == tenant_id,
         models.Schedule.is_active == True
     ).all()
+
+    # 2. Get reports with embedded schedules in their operational_config
+    reports_with_embedded_schedule = []
+    all_reports = db.query(models.Report).filter(
+        models.Report.tenant_id == tenant_id,
+        models.Report.is_active == True
+    ).all()
+
+    for report in all_reports:
+        # Schedule is now stored in operational_config on Report (not versioned)
+        op_config = report.operational_config or {}
+        schedule_config = op_config.get('schedule', {})
+
+        # Also check version.config for backwards compatibility (migration)
+        if not schedule_config and report.current_version_id:
+            version = db.query(models.ReportVersion).filter(
+                models.ReportVersion.id == report.current_version_id
+            ).first()
+            if version and version.config:
+                schedule_config = version.config.get('schedule', {})
+
+        if schedule_config:
+            # Schedule is enabled if:
+            # 1. enabled is explicitly True, OR
+            # 2. enabled is not explicitly False AND there's a cron/calendar config
+            is_enabled = schedule_config.get('enabled')
+            has_schedule_config = bool(schedule_config.get('cron') or schedule_config.get('calendar'))
+
+            # If enabled is not explicitly False and there's schedule config, treat as enabled
+            schedule_active = (is_enabled == True) or (is_enabled is None and has_schedule_config)
+
+            if schedule_active:
+                reports_with_embedded_schedule.append({
+                    'report': report,
+                    'schedule_config': schedule_config
+                })
     
     # === Get job runs for the business date ===
     # We look for runs created on the business date (or the day after for EOD runs)
@@ -164,25 +202,29 @@ async def get_daily_summary(
     
     # === Build scheduled reports list ===
     scheduled_reports = []
-    
+    seen_report_ids = set()  # Avoid duplicates if report has both legacy and embedded schedule
+
+    # 1. Process legacy schedules
     for schedule in schedules:
         report = schedule.report
         if not report:
             continue
-        
+
+        seen_report_ids.add(report.id)
+
         # Find job runs for this report on the business date
         report_versions = db.query(models.ReportVersion.id).filter(
             models.ReportVersion.report_id == report.id
         ).all()
         version_ids = [v[0] for v in report_versions]
-        
+
         # Find matching job run
         matching_run = None
         for vid in version_ids:
             if vid in run_by_version:
                 matching_run = run_by_version[vid]
                 break
-        
+
         # Get artifact info if run exists
         artifact_id = None
         filename = None
@@ -193,18 +235,86 @@ async def get_daily_summary(
             if artifact:
                 artifact_id = str(artifact.id)
                 filename = artifact.filename
-        
+
         # Calculate duration
         duration = None
         if matching_run and matching_run.started_at and matching_run.ended_at:
             duration = (matching_run.ended_at - matching_run.started_at).total_seconds()
-        
+
         scheduled_reports.append(ScheduledReportSummary(
             report_id=report.id,
             report_name=report.name,
             schedule_id=schedule.id,
             schedule_name=schedule.name,
             cron_expression=schedule.cron_expression,
+            next_run_at=schedule.next_run_at if not matching_run else None,
+            job_run_id=matching_run.id if matching_run else None,
+            status=matching_run.status.value if matching_run else "not_run",
+            triggered_by=matching_run.triggered_by.value if matching_run else None,
+            created_at=matching_run.created_at if matching_run else None,
+            started_at=matching_run.started_at if matching_run else None,
+            ended_at=matching_run.ended_at if matching_run else None,
+            duration_seconds=duration,
+            artifact_id=artifact_id,
+            filename=filename,
+            error_message=matching_run.error_message if matching_run else None
+        ))
+
+    # 2. Process embedded schedules (from report config)
+    for item in reports_with_embedded_schedule:
+        report = item['report']
+        schedule_config = item['schedule_config']
+
+        # Skip if already processed via legacy schedule
+        if report.id in seen_report_ids:
+            continue
+
+        # Get cron expression from config
+        cron_expr = None
+        if schedule_config.get('type') == 'cron' or not schedule_config.get('type'):
+            cron_expr = schedule_config.get('cron')
+        elif schedule_config.get('type') == 'calendar':
+            # Build a human-readable description for calendar schedules
+            cal = schedule_config.get('calendar', {})
+            freq = cal.get('frequency', 'daily')
+            times = cal.get('times', ['06:00'])
+            cron_expr = f"Calendar: {freq} at {', '.join(times)}"
+
+        # Find job runs for this report on the business date
+        report_versions = db.query(models.ReportVersion.id).filter(
+            models.ReportVersion.report_id == report.id
+        ).all()
+        version_ids = [v[0] for v in report_versions]
+
+        # Find matching job run
+        matching_run = None
+        for vid in version_ids:
+            if vid in run_by_version:
+                matching_run = run_by_version[vid]
+                break
+
+        # Get artifact info if run exists
+        artifact_id = None
+        filename = None
+        if matching_run:
+            artifact = db.query(models.Artifact).filter(
+                models.Artifact.job_run_id == matching_run.id
+            ).first()
+            if artifact:
+                artifact_id = str(artifact.id)
+                filename = artifact.filename
+
+        # Calculate duration
+        duration = None
+        if matching_run and matching_run.started_at and matching_run.ended_at:
+            duration = (matching_run.ended_at - matching_run.started_at).total_seconds()
+
+        scheduled_reports.append(ScheduledReportSummary(
+            report_id=report.id,
+            report_name=report.name,
+            schedule_id=None,  # Embedded schedule has no separate ID
+            schedule_name="Embedded Schedule",
+            cron_expression=cron_expr,
             job_run_id=matching_run.id if matching_run else None,
             status=matching_run.status.value if matching_run else "not_run",
             triggered_by=matching_run.triggered_by.value if matching_run else None,
@@ -287,35 +397,29 @@ async def get_daily_summary(
         file_submissions=file_submission_summaries
     )
     
-    # === Get pending schedules (scheduled for today but not yet run) ===
+    # === Get upcoming schedules (next 7 days) ===
     pending_schedules = []
-    today = date.today()
-    
-    if business_date == today or business_date == get_previous_business_date():
-        now = datetime.now(timezone.utc)
-        for schedule in schedules:
-            # Check if this schedule should have run today but hasn't
-            if schedule.next_run_at and schedule.next_run_at.date() == today:
-                # Check if there's a run for this schedule today
-                report_versions = db.query(models.ReportVersion.id).filter(
-                    models.ReportVersion.report_id == schedule.report_id
-                ).all()
-                version_ids = [v[0] for v in report_versions]
-                
-                has_run_today = db.query(models.JobRun).filter(
-                    models.JobRun.report_version_id.in_(version_ids),
-                    models.JobRun.created_at >= datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-                ).first() is not None
-                
-                if not has_run_today and schedule.next_run_at > now:
-                    pending_schedules.append(PendingSchedule(
-                        schedule_id=schedule.id,
-                        schedule_name=schedule.name,
-                        report_id=schedule.report_id,
-                        report_name=schedule.report.name if schedule.report else "Unknown",
-                        next_run_at=schedule.next_run_at,
-                        cron_expression=schedule.cron_expression
-                    ))
+    now = datetime.now(timezone.utc)
+    seven_days_later = now + timedelta(days=7)
+
+    # Query all active schedules with next_run_at in the future (next 7 days)
+    upcoming_schedules = db.query(models.Schedule).filter(
+        models.Schedule.tenant_id == current_user.tenant_id,
+        models.Schedule.is_active == True,
+        models.Schedule.next_run_at != None,
+        models.Schedule.next_run_at > now,
+        models.Schedule.next_run_at <= seven_days_later
+    ).order_by(models.Schedule.next_run_at).limit(10).all()
+
+    for schedule in upcoming_schedules:
+        pending_schedules.append(PendingSchedule(
+            schedule_id=schedule.id,
+            schedule_name=schedule.name,
+            report_id=schedule.report_id,
+            report_name=schedule.report.name if schedule.report else "Unknown",
+            next_run_at=schedule.next_run_at,
+            cron_expression=schedule.cron_expression
+        ))
     
     # === Calculate summary stats ===
     run_statuses = [r.status for r in scheduled_reports if r.job_run_id]

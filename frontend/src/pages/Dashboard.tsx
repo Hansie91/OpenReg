@@ -58,6 +58,88 @@ const formatDate = (date: Date): string => {
     return date.toISOString().split('T')[0];
 };
 
+// Helper to parse cron expression and return human-readable schedule
+const formatCronSchedule = (cronExpr: string | null | undefined): { time: string; frequency: string } => {
+    if (!cronExpr) return { time: '-', frequency: '' };
+
+    // Handle calendar-based descriptions (from embedded schedules)
+    if (cronExpr.startsWith('Calendar:')) {
+        return { time: cronExpr.replace('Calendar: ', ''), frequency: '' };
+    }
+
+    // Parse standard cron: minute hour day-of-month month day-of-week
+    const parts = cronExpr.trim().split(/\s+/);
+    if (parts.length < 5) return { time: cronExpr, frequency: '' };
+
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+
+    // Format time (HH:MM)
+    let timeStr = '-';
+    if (hour !== '*' && minute !== '*') {
+        const h = hour.padStart(2, '0');
+        const m = minute.padStart(2, '0');
+        timeStr = `${h}:${m}`;
+    } else if (hour !== '*') {
+        timeStr = `${hour.padStart(2, '0')}:00`;
+    }
+
+    // Determine frequency
+    let freqStr = '';
+    if (dayOfMonth === '*' && month === '*') {
+        if (dayOfWeek === '*') {
+            freqStr = 'Daily';
+        } else if (dayOfWeek === '1-5') {
+            freqStr = 'Weekdays';
+        } else if (dayOfWeek === '1') {
+            freqStr = 'Weekly (Mon)';
+        } else if (dayOfWeek === '0' || dayOfWeek === '7') {
+            freqStr = 'Weekly (Sun)';
+        } else {
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dayNum = parseInt(dayOfWeek);
+            if (!isNaN(dayNum) && dayNum >= 0 && dayNum <= 6) {
+                freqStr = `Weekly (${days[dayNum]})`;
+            }
+        }
+    } else if (dayOfMonth !== '*' && month === '*') {
+        freqStr = `Monthly (${dayOfMonth}${getOrdinalSuffix(parseInt(dayOfMonth))})`;
+    } else if (month !== '*') {
+        freqStr = 'Yearly';
+    }
+
+    return { time: timeStr, frequency: freqStr };
+};
+
+// Helper for ordinal suffix
+const getOrdinalSuffix = (n: number): string => {
+    if (n >= 11 && n <= 13) return 'th';
+    switch (n % 10) {
+        case 1: return 'st';
+        case 2: return 'nd';
+        case 3: return 'rd';
+        default: return 'th';
+    }
+};
+
+// Helper to format time until next run (like Schedules page)
+const formatNextRun = (dateStr: string | null): { text: string; isUrgent: boolean; isOverdue: boolean } => {
+    if (!dateStr) return { text: 'Not scheduled', isUrgent: false, isOverdue: false };
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (diff < 0) return { text: 'Overdue', isUrgent: true, isOverdue: true };
+    if (hours < 1) return { text: `In ${minutes}m`, isUrgent: true, isOverdue: false };
+    if (hours < 24) return { text: `In ${hours}h ${minutes}m`, isUrgent: hours < 2, isOverdue: false };
+    return {
+        text: date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isUrgent: false,
+        isOverdue: false
+    };
+};
+
 // Helper to get previous business date (T-1)
 const getPreviousBusinessDate = (): Date => {
     const today = new Date();
@@ -112,7 +194,7 @@ export default function Dashboard() {
     );
 
     // Extract actual data arrays from response objects
-    const runs = runsResponse?.data || [];
+    const runs = runsResponse?.runs || [];
     const reports = reportsResponse?.data || reportsResponse || [];
     const connectors = connectorsResponse?.data || connectorsResponse || [];
 
@@ -203,7 +285,6 @@ export default function Dashboard() {
         record_rejections: 0,
         file_submissions: []
     };
-    const pendingSchedules = summaryResponse?.pending_schedules || [];
     const summary = summaryResponse?.summary || { total_scheduled: 0, executed: 0, success: 0, failed: 0, running: 0, pending: 0 };
 
     return (
@@ -289,8 +370,8 @@ export default function Dashboard() {
                             </span>
                         )}
                     </h2>
-                    <Link to="/schedules" className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1">
-                        Manage
+                    <Link to="/reports" className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                        Manage Reports
                         <Icons.ArrowRight />
                     </Link>
                 </div>
@@ -303,64 +384,84 @@ export default function Dashboard() {
                             <thead>
                                 <tr>
                                     <th>Report</th>
-                                    <th>Schedule</th>
+                                    <th>Scheduled</th>
                                     <th>Status</th>
                                     <th>Triggered</th>
-                                    <th>Time</th>
+                                    <th>Run Time</th>
                                     <th>Duration</th>
                                     <th></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {scheduledReports.map((report: any) => (
-                                    <tr key={report.schedule_id || report.report_id}>
-                                        <td className="font-medium">{report.report_name}</td>
-                                        <td>
-                                            <div className="text-xs">
-                                                <div>{report.schedule_name}</div>
-                                                {report.cron_expression && (
-                                                    <div className="text-gray-400 font-mono">{report.cron_expression}</div>
+                                {scheduledReports.map((report: any) => {
+                                    const nextRun = report.next_run_at ? formatNextRun(report.next_run_at) : null;
+                                    return (
+                                        <tr key={report.schedule_id || report.report_id}>
+                                            <td className="font-medium">{report.report_name}</td>
+                                            <td>
+                                                {(() => {
+                                                    const { time, frequency } = formatCronSchedule(report.cron_expression);
+                                                    return (
+                                                        <div className="text-xs">
+                                                            <div className="font-medium">{time}</div>
+                                                            {frequency && <div className="text-gray-400">{frequency}</div>}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
+                                            <td>
+                                                {report.status === 'not_run' && nextRun ? (
+                                                    <span className={`badge ${
+                                                        nextRun.isOverdue
+                                                            ? 'badge-error'
+                                                            : nextRun.isUrgent
+                                                                ? 'badge-warning'
+                                                                : 'badge-info'
+                                                    }`}>
+                                                        {nextRun.text}
+                                                    </span>
+                                                ) : (
+                                                    getStatusBadge(report.status)
                                                 )}
-                                            </div>
-                                        </td>
-                                        <td>{getStatusBadge(report.status)}</td>
-                                        <td className="capitalize text-gray-500">{report.triggered_by || '-'}</td>
-                                        <td className="text-gray-500">
-                                            {report.created_at
-                                                ? new Date(report.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                                : '-'
-                                            }
-                                        </td>
-                                        <td className="text-gray-500">
-                                            {report.duration_seconds
-                                                ? `${Math.round(report.duration_seconds)}s`
-                                                : '-'
-                                            }
-                                        </td>
-                                        <td>
-                                            {report.artifact_id && report.job_run_id ? (
-                                                <button
-                                                    onClick={() => handleDownload(
-                                                        report.job_run_id,
-                                                        report.artifact_id,
-                                                        report.filename || 'report.xml'
-                                                    )}
-                                                    className="btn btn-xs btn-ghost text-blue-600"
-                                                    title="Download"
-                                                >
-                                                    <Icons.Download />
-                                                </button>
-                                            ) : report.job_run_id ? (
-                                                <Link
-                                                    to={`/runs`}
-                                                    className="btn btn-xs btn-ghost text-gray-500"
-                                                >
-                                                    View
-                                                </Link>
-                                            ) : null}
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                            <td className="capitalize text-gray-500">{report.triggered_by || '-'}</td>
+                                            <td className="text-gray-500">
+                                                {report.created_at
+                                                    ? new Date(report.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                                    : '-'
+                                                }
+                                            </td>
+                                            <td className="text-gray-500">
+                                                {report.duration_seconds
+                                                    ? `${Math.round(report.duration_seconds)}s`
+                                                    : '-'
+                                                }
+                                            </td>
+                                            <td>
+                                                {report.artifact_id && report.job_run_id ? (
+                                                    <button
+                                                        onClick={() => handleDownload(
+                                                            report.job_run_id,
+                                                            report.artifact_id,
+                                                            report.filename || 'report.xml'
+                                                        )}
+                                                        className="btn btn-xs btn-ghost text-blue-600"
+                                                        title="Download"
+                                                    >
+                                                        <Icons.Download />
+                                                    </button>
+                                                ) : report.job_run_id ? (
+                                                    <Link
+                                                        to={`/runs`}
+                                                        className="btn btn-xs btn-ghost text-gray-500"
+                                                    >
+                                                        View
+                                                    </Link>
+                                                ) : null}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -369,35 +470,10 @@ export default function Dashboard() {
                         <div className="empty-state-icon"><Icons.Reports /></div>
                         <h3 className="empty-state-title">No scheduled reports</h3>
                         <p className="empty-state-description">No reports scheduled for {selectedDate}</p>
-                        <Link to="/schedules" className="btn btn-primary btn-sm mt-3">Create Schedule</Link>
+                        <Link to="/reports" className="btn btn-primary btn-sm mt-3">Manage Reports</Link>
                     </div>
                 )}
             </div>
-
-            {/* Pending Schedules */}
-            {pendingSchedules.length > 0 && (
-                <div className="mb-4">
-                    <div className="card p-3 bg-amber-50 border-amber-200">
-                        <h3 className="text-xs font-medium text-amber-800 flex items-center gap-1 mb-2">
-                            <Icons.Clock />
-                            Pending ({pendingSchedules.length})
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {pendingSchedules.map((schedule: any) => (
-                                <div key={schedule.schedule_id} className="bg-white rounded px-2 py-1 border border-amber-200 text-xs">
-                                    <span className="font-medium text-gray-800">{schedule.report_name}</span>
-                                    <span className="text-gray-500 ml-2">
-                                        {schedule.next_run_at
-                                            ? new Date(schedule.next_run_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                            : 'TBD'
-                                        }
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Two Column Layout */}
             <div className="grid grid-cols-2 gap-4">
