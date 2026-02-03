@@ -547,17 +547,252 @@
         "documentation": "Field 65: Submitting entity identification code (LEI)"
       }
     ],
-    "recommended_validations": [
-      "lei_format",
-      "isin_format",
-      "mic_format",
-      "quantity_positive",
-      "price_positive",
-      "trading_capacity_valid",
-      "report_status_valid",
-      "country_code_valid",
-      "currency_code_valid",
-      "date_format_valid"
+    "validation_rules": [
+      {
+        "rule_id": "MIFIR-VR001",
+        "name": "LEI Format",
+        "expression": "df['executing_entity_id_code'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for executing entity. Must be 20 alphanumeric characters."
+      },
+      {
+        "rule_id": "MIFIR-VR002",
+        "name": "LEI Checksum",
+        "expression": "df['executing_entity_id_code'].apply(lei_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "LEI checksum validation failed for executing entity."
+      },
+      {
+        "rule_id": "MIFIR-VR003",
+        "name": "Submitting Entity LEI Format",
+        "expression": "df['submitting_entity_id_code'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for submitting entity."
+      },
+      {
+        "rule_id": "MIFIR-VR004",
+        "name": "ISIN Format",
+        "expression": "df['instrument_id_code'].str.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', na=True) | (df['instrument_id_code_type'] != 'ISIN')",
+        "severity": "BLOCKING",
+        "error_message": "Invalid ISIN format. Must be 2 letter country + 9 alphanumeric + 1 check digit."
+      },
+      {
+        "rule_id": "MIFIR-VR005",
+        "name": "ISIN Checksum",
+        "expression": "df.apply(lambda r: r['instrument_id_code_type'] != 'ISIN' or isin_checksum_valid(r['instrument_id_code']), axis=1)",
+        "severity": "BLOCKING",
+        "error_message": "ISIN checksum validation failed."
+      },
+      {
+        "rule_id": "MIFIR-VR006",
+        "name": "MIC Format",
+        "expression": "df['venue'].str.match(r'^[A-Z0-9]{4}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid MIC format. Must be 4 uppercase alphanumeric."
+      },
+      {
+        "rule_id": "MIFIR-VR007",
+        "name": "Valid MIC Code",
+        "expression": "df['venue'].isin(VALID_MICS) | df['venue'].isin(['XOFF', 'XXXX', 'SINT'])",
+        "severity": "WARNING",
+        "error_message": "MIC code not found in ISO 10383 registry."
+      },
+      {
+        "rule_id": "MIFIR-VR008",
+        "name": "Currency Code Format",
+        "expression": "df['price_currency'].str.match(r'^[A-Z]{3}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid currency code format."
+      },
+      {
+        "rule_id": "MIFIR-VR009",
+        "name": "Valid Currency Code",
+        "expression": "df['price_currency'].isin(ISO_4217_CURRENCIES)",
+        "severity": "BLOCKING",
+        "error_message": "Currency code not in ISO 4217."
+      },
+      {
+        "rule_id": "MIFIR-VR010",
+        "name": "Country Code Format",
+        "expression": "df['buyer_country_of_branch'].isna() | df['buyer_country_of_branch'].str.match(r'^[A-Z]{2}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid country code format."
+      },
+      {
+        "rule_id": "MIFIR-VR011",
+        "name": "Valid Country Code",
+        "expression": "df['buyer_country_of_branch'].isna() | df['buyer_country_of_branch'].isin(ISO_3166_COUNTRIES)",
+        "severity": "BLOCKING",
+        "error_message": "Country code not in ISO 3166-1."
+      },
+      {
+        "rule_id": "MIFIR-VR012",
+        "name": "CFI Code Format",
+        "expression": "df['instrument_classification'].isna() | df['instrument_classification'].str.match(r'^[A-Z]{6}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid CFI code format. Must be 6 uppercase letters."
+      },
+      {
+        "rule_id": "MIFIR-VR013",
+        "name": "Positive Quantity",
+        "expression": "pd.to_numeric(df['quantity'], errors='coerce') > 0",
+        "severity": "BLOCKING",
+        "error_message": "Quantity must be positive."
+      },
+      {
+        "rule_id": "MIFIR-VR014",
+        "name": "Non-Negative Price",
+        "expression": "pd.to_numeric(df['price'], errors='coerce') >= 0",
+        "severity": "BLOCKING",
+        "error_message": "Price must be non-negative."
+      },
+      {
+        "rule_id": "MIFIR-VR015",
+        "name": "Valid Report Status",
+        "expression": "df['report_status'].isin(['NEWT', 'CANC', 'AMND'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid report status. Must be NEWT, CANC, or AMND."
+      },
+      {
+        "rule_id": "MIFIR-VR016",
+        "name": "Valid Trading Capacity",
+        "expression": "df['trading_capacity'].isin(['DEAL', 'MTCH', 'AOTC', 'APTS'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid trading capacity. Must be DEAL, MTCH, or AOTC."
+      },
+      {
+        "rule_id": "MIFIR-VR017",
+        "name": "Valid Buy/Sell Indicator",
+        "expression": "df['buy_sell_indicator'].isin(['BUYI', 'SELL']) if 'buy_sell_indicator' in df.columns else True",
+        "severity": "BLOCKING",
+        "error_message": "Invalid buy/sell indicator. Must be BUYI or SELL."
+      },
+      {
+        "rule_id": "MIFIR-VR018",
+        "name": "Valid Price Notation",
+        "expression": "df['price_notation'].isna() | df['price_notation'].isin(['MONE', 'PERC', 'YIEL', 'BAPO'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid price notation."
+      },
+      {
+        "rule_id": "MIFIR-VR019",
+        "name": "Trading DateTime Format",
+        "expression": "df['trading_date_time'].str.match(r'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid trading datetime format. Must be ISO 8601."
+      },
+      {
+        "rule_id": "MIFIR-VR020",
+        "name": "Trading Time Not Future",
+        "expression": "pd.to_datetime(df['trading_date_time'], errors='coerce') <= pd.Timestamp.utcnow()",
+        "severity": "BLOCKING",
+        "error_message": "Trading time cannot be in the future."
+      },
+      {
+        "rule_id": "MIFIR-VR021",
+        "name": "Buyer Seller Different",
+        "expression": "(df['buyer_id_code'] != df['seller_id_code']) | (df['buyer_id_code_type'] != df['seller_id_code_type'])",
+        "severity": "BLOCKING",
+        "error_message": "Buyer and seller cannot be the same entity."
+      },
+      {
+        "rule_id": "MIFIR-VR022",
+        "name": "Linked Transaction for Cancel/Amend",
+        "expression": "(df['report_status'] == 'NEWT') | (df['linked_transaction_reference'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Linked transaction reference required for CANC/AMND."
+      },
+      {
+        "rule_id": "MIFIR-VR023",
+        "name": "Short Selling Only for Sell",
+        "expression": "df['short_selling_indicator'].isna() | (df['buy_sell_indicator'] == 'SELL')",
+        "severity": "BLOCKING",
+        "error_message": "Short selling indicator only valid for sell transactions."
+      },
+      {
+        "rule_id": "MIFIR-VR024",
+        "name": "Quantity Currency Required for Monetary",
+        "expression": "df['quantity_currency'].notna() | (df['price_notation'] != 'MONE')",
+        "severity": "BLOCKING",
+        "error_message": "Quantity currency required for monetary notation."
+      },
+      {
+        "rule_id": "MIFIR-VR025",
+        "name": "Valid Waiver Indicator",
+        "expression": "df['waiver_indicator'].isna() | df['waiver_indicator'].isin(['OILQ', 'NLIQ', 'PRIC', 'SIZE', 'RFPT', 'BENC', 'ILQD', 'RPRI', 'TNCP'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid waiver indicator code."
+      },
+      {
+        "rule_id": "MIFIR-VR026",
+        "name": "Venue Transaction ID for On-Venue",
+        "expression": "df['venue'].isin(['XOFF', 'XXXX', 'SINT']) | df['trading_venue_transaction_id'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Trading venue transaction ID required for on-venue trades."
+      },
+      {
+        "rule_id": "MIFIR-VR027",
+        "name": "Instrument Full Name for Non-ISIN",
+        "expression": "(df['instrument_id_code_type'] == 'ISIN') | df['instrument_full_name'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Instrument full name required when ISIN not available."
+      },
+      {
+        "rule_id": "MIFIR-VR028",
+        "name": "Valid Short Selling Indicator",
+        "expression": "df['short_selling_indicator'].isna() | df['short_selling_indicator'].isin(['SESH', 'SSEX', 'SELL', 'UNDI'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid short selling indicator."
+      },
+      {
+        "rule_id": "MIFIR-VR029",
+        "name": "Buyer LEI Format When Type is LEI",
+        "expression": "(df['buyer_id_code_type'] != 'LEI') | df['buyer_id_code'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Buyer ID must be valid LEI format when ID type is LEI."
+      },
+      {
+        "rule_id": "MIFIR-VR030",
+        "name": "Seller LEI Format When Type is LEI",
+        "expression": "(df['seller_id_code_type'] != 'LEI') | df['seller_id_code'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Seller ID must be valid LEI format when ID type is LEI."
+      },
+      {
+        "rule_id": "MIFIR-VR031",
+        "name": "Reasonable Price Range",
+        "expression": "pd.to_numeric(df['price'], errors='coerce') < 1e12",
+        "severity": "WARNING",
+        "error_message": "Price appears unusually high."
+      },
+      {
+        "rule_id": "MIFIR-VR032",
+        "name": "Reasonable Quantity Range",
+        "expression": "pd.to_numeric(df['quantity'], errors='coerce') < 1e15",
+        "severity": "WARNING",
+        "error_message": "Quantity appears unusually high."
+      },
+      {
+        "rule_id": "MIFIR-VR033",
+        "name": "T+1 Reporting Check",
+        "expression": "(pd.Timestamp.utcnow() - pd.to_datetime(df['trading_date_time'], errors='coerce')).dt.days <= 1",
+        "severity": "WARNING",
+        "error_message": "Report may be late - T+1 deadline applies."
+      },
+      {
+        "rule_id": "MIFIR-VR034",
+        "name": "Valid Buyer ID Type",
+        "expression": "df['buyer_id_code_type'].isin(['LEI', 'MIC', 'INTC', 'NATI', 'CCPT', 'CONCAT', 'NIDN'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid buyer ID type."
+      },
+      {
+        "rule_id": "MIFIR-VR035",
+        "name": "Valid Seller ID Type",
+        "expression": "df['seller_id_code_type'].isin(['LEI', 'MIC', 'INTC', 'NATI', 'CCPT', 'CONCAT', 'NIDN'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid seller ID type."
+      }
     ]
   },
   "documentation_url": "https://docs.openreg.io/templates/mifir"

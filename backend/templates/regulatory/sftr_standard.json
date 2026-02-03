@@ -108,12 +108,357 @@
         "documentation": "Principal currency"
       }
     ],
-    "recommended_validations": [
-      "lei_format",
-      "uti_format",
-      "isin_format",
-      "date_sequence",
-      "amount_positive"
+    "validation_rules": [
+      {
+        "rule_id": "SFTR-VR001",
+        "name": "Reporting CP LEI Format",
+        "expression": "df['reporting_counterparty_lei'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for reporting counterparty. Must be 20 alphanumeric characters."
+      },
+      {
+        "rule_id": "SFTR-VR002",
+        "name": "Reporting CP LEI Checksum",
+        "expression": "df['reporting_counterparty_lei'].apply(lei_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "Reporting counterparty LEI checksum validation failed."
+      },
+      {
+        "rule_id": "SFTR-VR003",
+        "name": "Other CP LEI Format",
+        "expression": "df['other_counterparty_lei'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for other counterparty."
+      },
+      {
+        "rule_id": "SFTR-VR004",
+        "name": "Other CP LEI Checksum",
+        "expression": "df['other_counterparty_lei'].apply(lei_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "Other counterparty LEI checksum validation failed."
+      },
+      {
+        "rule_id": "SFTR-VR005",
+        "name": "UTI Format",
+        "expression": "df['uti'].str.match(r'^[A-Za-z0-9]{1,52}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid UTI format. Must be 1-52 alphanumeric characters."
+      },
+      {
+        "rule_id": "SFTR-VR006",
+        "name": "UTI Prefix LEI",
+        "expression": "(df['uti'].str.len() < 20) | df['uti'].str[:20].str.match(r'^[A-Z0-9]{20}$', na=True)",
+        "severity": "WARNING",
+        "error_message": "UTI prefix should be a valid LEI."
+      },
+      {
+        "rule_id": "SFTR-VR007",
+        "name": "Counterparties Different",
+        "expression": "df['reporting_counterparty_lei'] != df['other_counterparty_lei']",
+        "severity": "BLOCKING",
+        "error_message": "Reporting and other counterparty cannot be the same."
+      },
+      {
+        "rule_id": "SFTR-VR008",
+        "name": "Valid SFT Type",
+        "expression": "df['sft_type'].isin(['REPO', 'BSBC', 'SLEB', 'MGLD'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid SFT type. Must be REPO, BSBC, SLEB, or MGLD."
+      },
+      {
+        "rule_id": "SFTR-VR009",
+        "name": "Execution Timestamp Format",
+        "expression": "df['execution_timestamp'].str.match(r'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid execution timestamp format."
+      },
+      {
+        "rule_id": "SFTR-VR010",
+        "name": "Execution Not Future",
+        "expression": "pd.to_datetime(df['execution_timestamp'], errors='coerce') <= pd.Timestamp.utcnow()",
+        "severity": "BLOCKING",
+        "error_message": "Execution timestamp cannot be in the future."
+      },
+      {
+        "rule_id": "SFTR-VR011",
+        "name": "Maturity Date Format",
+        "expression": "df['maturity_date'].isna() | df['maturity_date'].str.match(r'^\\d{4}-\\d{2}-\\d{2}', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid maturity date format."
+      },
+      {
+        "rule_id": "SFTR-VR012",
+        "name": "Value Date Format",
+        "expression": "df['value_date'].str.match(r'^\\d{4}-\\d{2}-\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid value date format."
+      },
+      {
+        "rule_id": "SFTR-VR013",
+        "name": "Value Date Before Maturity",
+        "expression": "df['maturity_date'].isna() | (df['value_date'] <= df['maturity_date'])",
+        "severity": "BLOCKING",
+        "error_message": "Value date cannot be after maturity date."
+      },
+      {
+        "rule_id": "SFTR-VR014",
+        "name": "Collateral ISIN Format",
+        "expression": "df['collateral_isin'].str.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid ISIN format for collateral security."
+      },
+      {
+        "rule_id": "SFTR-VR015",
+        "name": "Collateral ISIN Checksum",
+        "expression": "df['collateral_isin'].apply(isin_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "Collateral ISIN checksum validation failed."
+      },
+      {
+        "rule_id": "SFTR-VR016",
+        "name": "Positive Collateral Quantity",
+        "expression": "pd.to_numeric(df['collateral_quantity'], errors='coerce') > 0",
+        "severity": "BLOCKING",
+        "error_message": "Collateral quantity must be positive."
+      },
+      {
+        "rule_id": "SFTR-VR017",
+        "name": "Positive Principal Amount",
+        "expression": "pd.to_numeric(df['principal_amount'], errors='coerce') > 0",
+        "severity": "BLOCKING",
+        "error_message": "Principal amount must be positive."
+      },
+      {
+        "rule_id": "SFTR-VR018",
+        "name": "Principal Currency Format",
+        "expression": "df['principal_currency'].str.match(r'^[A-Z]{3}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid principal currency format."
+      },
+      {
+        "rule_id": "SFTR-VR019",
+        "name": "Valid Principal Currency",
+        "expression": "df['principal_currency'].isin(ISO_4217_CURRENCIES)",
+        "severity": "BLOCKING",
+        "error_message": "Principal currency not in ISO 4217."
+      },
+      {
+        "rule_id": "SFTR-VR020",
+        "name": "Valid Action Type",
+        "expression": "df['action_type'].isin(['NEWT', 'MODI', 'VALU', 'COLU', 'EROR', 'CORR', 'ETRM', 'POSC'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid action type."
+      },
+      {
+        "rule_id": "SFTR-VR021",
+        "name": "CCP Required if Cleared",
+        "expression": "(df['cleared'] != 'Y') | (df['ccp_lei'].notna() & df['ccp_lei'].str.match(r'^[A-Z0-9]{20}$', na=False))",
+        "severity": "BLOCKING",
+        "error_message": "CCP LEI required when SFT is cleared."
+      },
+      {
+        "rule_id": "SFTR-VR022",
+        "name": "Valid Cleared Status",
+        "expression": "df['cleared'].isin(['Y', 'N'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid cleared status. Must be Y or N."
+      },
+      {
+        "rule_id": "SFTR-VR023",
+        "name": "Prior UTI for Lifecycle Events",
+        "expression": "(df['action_type'].isin(['NEWT', 'VALU', 'COLU', 'POSC'])) | (df['prior_uti'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Prior UTI required for MODI, CORR, ETRM actions."
+      },
+      {
+        "rule_id": "SFTR-VR024",
+        "name": "Valid Collateralisation",
+        "expression": "df['collateralisation'].isin(['SIUR', 'SITR', 'TITL', 'PSEG', 'PSPN', 'PSSH', 'IGAS', 'OOXX', 'TTCA'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid collateralisation type."
+      },
+      {
+        "rule_id": "SFTR-VR025",
+        "name": "Collateral Portfolio Code Required",
+        "expression": "(df['collateral_portfolio_indicator'] != 'Y') | (df['collateral_portfolio_code'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Collateral portfolio code required when indicator is Y."
+      },
+      {
+        "rule_id": "SFTR-VR026",
+        "name": "Valid Nature of CP",
+        "expression": "df['nature_of_reporting_cp'].isin(['F', 'N'])",
+        "severity": "BLOCKING",
+        "error_message": "Nature of counterparty must be F or N."
+      },
+      {
+        "rule_id": "SFTR-VR027",
+        "name": "Sector Required for Financial CP",
+        "expression": "(df['nature_of_reporting_cp'] != 'F') | (df['sector_of_reporting_cp'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Sector required for financial counterparties."
+      },
+      {
+        "rule_id": "SFTR-VR028",
+        "name": "Valid Sector Code",
+        "expression": "df['sector_of_reporting_cp'].isna() | df['sector_of_reporting_cp'].isin(['AIFD', 'CDTI', 'INUN', 'ORPI', 'INVF', 'REIN', 'UCIT', 'CSDS', 'CCPS'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid sector code."
+      },
+      {
+        "rule_id": "SFTR-VR029",
+        "name": "MIC Format",
+        "expression": "df['trading_venue'].isna() | df['trading_venue'].str.match(r'^[A-Z0-9]{4}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid MIC format for trading venue."
+      },
+      {
+        "rule_id": "SFTR-VR030",
+        "name": "Valid MIC Code",
+        "expression": "df['trading_venue'].isna() | df['trading_venue'].isin(VALID_MICS) | df['trading_venue'].isin(['XXXX', 'XOFF'])",
+        "severity": "WARNING",
+        "error_message": "MIC code not found in ISO 10383 registry."
+      },
+      {
+        "rule_id": "SFTR-VR031",
+        "name": "Country Code Format",
+        "expression": "df['reporting_cp_branch_country'].isna() | df['reporting_cp_branch_country'].str.match(r'^[A-Z]{2}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid country code format."
+      },
+      {
+        "rule_id": "SFTR-VR032",
+        "name": "Valid Country Code",
+        "expression": "df['reporting_cp_branch_country'].isna() | df['reporting_cp_branch_country'].isin(ISO_3166_COUNTRIES)",
+        "severity": "BLOCKING",
+        "error_message": "Country code not in ISO 3166-1."
+      },
+      {
+        "rule_id": "SFTR-VR033",
+        "name": "Initial Margin Posted Currency Required",
+        "expression": "df['initial_margin_posted'].isna() | df['initial_margin_posted_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Currency required when initial margin posted specified."
+      },
+      {
+        "rule_id": "SFTR-VR034",
+        "name": "Initial Margin Received Currency Required",
+        "expression": "df['initial_margin_received'].isna() | df['initial_margin_received_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Currency required when initial margin received specified."
+      },
+      {
+        "rule_id": "SFTR-VR035",
+        "name": "Variation Margin Posted Currency Required",
+        "expression": "df['variation_margin_posted'].isna() | df['variation_margin_posted_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Currency required when variation margin posted specified."
+      },
+      {
+        "rule_id": "SFTR-VR036",
+        "name": "Variation Margin Received Currency Required",
+        "expression": "df['variation_margin_received'].isna() | df['variation_margin_received_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Currency required when variation margin received specified."
+      },
+      {
+        "rule_id": "SFTR-VR037",
+        "name": "Termination Date Required for ETRM",
+        "expression": "(df['action_type'] != 'ETRM') | (df['termination_date'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Termination date required for early termination reports."
+      },
+      {
+        "rule_id": "SFTR-VR038",
+        "name": "Termination Date After Value Date",
+        "expression": "df['termination_date'].isna() | (df['termination_date'] >= df['value_date'])",
+        "severity": "BLOCKING",
+        "error_message": "Termination date cannot be before value date."
+      },
+      {
+        "rule_id": "SFTR-VR039",
+        "name": "Repo Rate for REPO Type",
+        "expression": "(df['sft_type'] != 'REPO') | (df['repo_rate'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Repo rate required for repurchase agreements."
+      },
+      {
+        "rule_id": "SFTR-VR040",
+        "name": "Reasonable Repo Rate Range",
+        "expression": "df['repo_rate'].isna() | ((pd.to_numeric(df['repo_rate'], errors='coerce') >= -10) & (pd.to_numeric(df['repo_rate'], errors='coerce') <= 50))",
+        "severity": "WARNING",
+        "error_message": "Repo rate appears outside normal range (-10% to 50%)."
+      },
+      {
+        "rule_id": "SFTR-VR041",
+        "name": "Lending Fee or Rebate for SLEB",
+        "expression": "(df['sft_type'] != 'SLEB') | (df['lending_fee'].notna() | df['rebate_rate'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Lending fee or rebate rate required for securities lending."
+      },
+      {
+        "rule_id": "SFTR-VR042",
+        "name": "Security ISIN for SLEB",
+        "expression": "(df['sft_type'] != 'SLEB') | (df['security_isin'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Security ISIN required for securities lending."
+      },
+      {
+        "rule_id": "SFTR-VR043",
+        "name": "Haircut Percentage Range",
+        "expression": "df['haircut'].isna() | ((pd.to_numeric(df['haircut'], errors='coerce') >= 0) & (pd.to_numeric(df['haircut'], errors='coerce') <= 100))",
+        "severity": "BLOCKING",
+        "error_message": "Haircut percentage must be between 0 and 100."
+      },
+      {
+        "rule_id": "SFTR-VR044",
+        "name": "Reasonable Principal Range",
+        "expression": "pd.to_numeric(df['principal_amount'], errors='coerce') < 1e15",
+        "severity": "WARNING",
+        "error_message": "Principal amount appears unusually large."
+      },
+      {
+        "rule_id": "SFTR-VR045",
+        "name": "T+1 Reporting Check",
+        "expression": "df['action_type'] != 'NEWT' | ((pd.Timestamp.utcnow() - pd.to_datetime(df['execution_timestamp'], errors='coerce')).dt.days <= 1)",
+        "severity": "WARNING",
+        "error_message": "New SFT report may be late - T+1 deadline."
+      },
+      {
+        "rule_id": "SFTR-VR046",
+        "name": "Reasonable Maturity Range",
+        "expression": "df['maturity_date'].isna() | ((pd.to_datetime(df['maturity_date'], errors='coerce') - pd.to_datetime(df['value_date'], errors='coerce')).dt.days < 18250)",
+        "severity": "WARNING",
+        "error_message": "Maturity appears more than 50 years from value date."
+      },
+      {
+        "rule_id": "SFTR-VR047",
+        "name": "Tri-party Agent LEI for Tri-party",
+        "expression": "(df['triparty_indicator'] != True) | (df['triparty_agent_lei'].notna() & df['triparty_agent_lei'].str.match(r'^[A-Z0-9]{20}$', na=False))",
+        "severity": "BLOCKING",
+        "error_message": "Tri-party agent LEI required when tri-party indicator is set."
+      },
+      {
+        "rule_id": "SFTR-VR048",
+        "name": "Beneficiary LEI for Agent Lending",
+        "expression": "(df['agent_lender_indicator'] != True) | (df['beneficiary_lei'].notna() & df['beneficiary_lei'].str.match(r'^[A-Z0-9]{20}$', na=False))",
+        "severity": "BLOCKING",
+        "error_message": "Beneficiary LEI required for agent lending transactions."
+      },
+      {
+        "rule_id": "SFTR-VR049",
+        "name": "Valid Floating Rate Reference",
+        "expression": "df['floating_rate_reference'].isna() | df['floating_rate_reference'].isin(['ESTR', 'SONIA', 'SOFR', 'EURI', 'LIBO', 'TIBO', 'STBO', 'BBSW', 'TONAR', 'CDOR'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid floating rate reference code."
+      },
+      {
+        "rule_id": "SFTR-VR050",
+        "name": "Valid Collateral Portfolio Indicator",
+        "expression": "df['collateral_portfolio_indicator'].isin(['Y', 'N'])",
+        "severity": "BLOCKING",
+        "error_message": "Collateral portfolio indicator must be Y or N."
+      }
     ]
   },
   "documentation_url": "https://docs.openreg.io/templates/sftr"

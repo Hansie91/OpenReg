@@ -23,7 +23,14 @@ export interface FieldSpec {
   min_length?: number;
   pattern?: string;
   enum_values?: string[];
-  condition?: string;
+  condition?: string;  // Human-readable condition description
+  // Structured condition expression for programmatic evaluation
+  // Examples:
+  //   { field: 'action_type', operator: 'in', value: ['MODI', 'CORR', 'TERM'] }
+  //   { field: 'asset_class', operator: 'eq', value: 'IR' }
+  //   { field: 'branch_country', operator: 'exists' }
+  //   { or: [{ field: 'x', operator: 'eq', value: 'A' }, { field: 'y', operator: 'eq', value: 'B' }] }
+  condition_expr?: ConditionExpression;
   cdm_path?: string;  // Path in the ISDA Common Domain Model (CDM)
   transform?: string;
   default_value?: string;
@@ -32,6 +39,16 @@ export interface FieldSpec {
   // For multi-report-type regulations: which report types this field applies to
   report_types?: string[];
 }
+
+// Structured condition expressions for conditional fields
+export type ConditionExpression =
+  | { field: string; operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte'; value: string | number }
+  | { field: string; operator: 'in' | 'not_in'; value: (string | number)[] }
+  | { field: string; operator: 'exists' | 'not_exists' }
+  | { field: string; operator: 'matches'; value: string }  // regex
+  | { and: ConditionExpression[] }
+  | { or: ConditionExpression[] }
+  | { not: ConditionExpression };
 
 export interface ReportTypeSpec {
   code: string;
@@ -206,6 +223,7 @@ export const EMIR_PACKAGE: RegulationPackage = {
       max_length: 2,
       pattern: '^[A-Z]{2}$',
       condition: 'Required when transaction concluded by a branch',
+      condition_expr: { field: 'parties[role=REPORTING].branch_country', operator: 'exists' },
       cdm_path: 'parties[role=REPORTING].branch_country',
       xml_element: 'RptgCtrPtyBrnch',
       validation_rules: ['ISO_COUNTRY'],
@@ -339,6 +357,7 @@ export const EMIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 52,
       condition: 'Required for lifecycle events (MODI, CORR, TERM)',
+      condition_expr: { field: 'action_type', operator: 'in', value: ['MODI', 'CORR', 'TERM'] },
       cdm_path: 'trade_event.prior_uti',
       xml_element: 'PrrUnqTxIdr',
       validation_rules: ['UTI_FORMAT'],
@@ -2824,7 +2843,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
   mandatory_fields: 38,
   conditional_fields: 20,
   optional_fields: 7,
-  validation_rule_count: 25,
+  validation_rule_count: 45,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:iso:std:iso:20022:tech:xsd:auth.016.001.01',
   output_root_element: 'Document',
@@ -2861,6 +2880,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 52,
       condition: 'Required for on-venue transactions',
+      condition_expr: { field: 'execution.trading_venue_mic', operator: 'ne', value: 'XOFF' },
       cdm_path: 'trade_event.venue_transaction_id',
       xml_element: 'TradgVnTxId',
       validation_rules: []
@@ -2976,6 +2996,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 3,
       pattern: '^[A-Z]{3}$',
       condition: 'Required for nominal amounts',
+      condition_expr: { field: 'product.quantity_notation', operator: 'in', value: ['NOML', 'MONE'] },
       cdm_path: 'product.quantity_currency',
       xml_element: 'QtyCcy',
       validation_rules: ['ISO_CURRENCY']
@@ -3010,6 +3031,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'decimal',
       requirement: 'conditional',
       condition: 'Required for cash transactions',
+      condition_expr: { field: 'product.is_cash_settled', operator: 'eq', value: true },
       cdm_path: 'product.net_amount',
       transform: 'FORMAT_DECIMAL_18_5',
       xml_element: 'NetAmt',
@@ -3036,6 +3058,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 2,
       pattern: '^[A-Z]{2}$',
       condition: 'Required if different from head office',
+      condition_expr: { field: 'parties[role=EXECUTING].country_of_branch', operator: 'exists' },
       cdm_path: 'parties[role=EXECUTING].country_of_branch',
       xml_element: 'CtryOfBrnch',
       validation_rules: ['ISO_COUNTRY']
@@ -3070,6 +3093,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 350,
       condition: 'Required when ISIN not available',
+      condition_expr: { field: 'product.instrument_id_type', operator: 'eq', value: 'OTHR' },
       cdm_path: 'product.instrument_name',
       xml_element: 'InstrmFullNm',
       validation_rules: []
@@ -3083,6 +3107,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 6,
       pattern: '^[A-Z]{6}$',
       condition: 'Required when ISIN not available',
+      condition_expr: { field: 'product.instrument_id_type', operator: 'eq', value: 'OTHR' },
       cdm_path: 'product.cfi_code',
       xml_element: 'InstrmClssfctn',
       validation_rules: ['CFI_FORMAT']
@@ -3095,6 +3120,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['OILQ', 'NLIQ', 'PRIC', 'SIZE', 'ILQD'],
       condition: 'Required for waivered trades',
+      condition_expr: { field: 'execution.has_waiver', operator: 'eq', value: true },
       cdm_path: 'execution.waiver_indicator',
       xml_element: 'WvrInd',
       validation_rules: ['ENUM_VALUE']
@@ -3107,6 +3133,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['SESH', 'SSEX', 'SELL', 'UNDI'],
       condition: 'Required for sell transactions',
+      condition_expr: { field: 'execution.is_sell_side', operator: 'eq', value: true },
       cdm_path: 'execution.short_selling_indicator',
       xml_element: 'ShrtSellgInd',
       validation_rules: ['ENUM_VALUE']
@@ -3119,6 +3146,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['BENC', 'ACTX', 'LRGS', 'ILQD', 'SIZE', 'CANC', 'AMND', 'SDIV', 'RPRI', 'DUPL', 'TNCP', 'TPAC', 'XFPH'],
       condition: 'Required for OTC trades',
+      condition_expr: { field: 'execution.trading_venue_mic', operator: 'eq', value: 'XOFF' },
       cdm_path: 'execution.otc_post_trade_indicator',
       xml_element: 'OTCPstTradInd',
       validation_rules: ['ENUM_VALUE']
@@ -3130,6 +3158,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'decimal',
       requirement: 'conditional',
       condition: 'Required for derivative transactions',
+      condition_expr: { field: 'product.is_derivative', operator: 'eq', value: true },
       cdm_path: 'product.upfront_payment',
       transform: 'FORMAT_DECIMAL_18_5',
       xml_element: 'UpFrntPmt',
@@ -3144,6 +3173,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 3,
       pattern: '^[A-Z]{3}$',
       condition: 'Required when up-front payment is reported',
+      condition_expr: { field: 'product.upfront_payment', operator: 'exists' },
       cdm_path: 'product.upfront_payment_currency',
       xml_element: 'UpFrntPmtCcy',
       validation_rules: ['ISO_CURRENCY']
@@ -3156,6 +3186,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required for client orders',
+      condition_expr: { field: 'execution.trading_capacity', operator: 'eq', value: 'APTS' },
       cdm_path: 'execution.investment_decision_maker',
       xml_element: 'InvstmtDcsnMakr',
       validation_rules: []
@@ -3168,6 +3199,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required when applicable',
+      condition_expr: { field: 'execution.execution_decision_maker', operator: 'exists' },
       cdm_path: 'execution.execution_decision_maker',
       xml_element: 'ExctnDcsnMakr',
       validation_rules: []
@@ -3234,6 +3266,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required when buyer is a client',
+      condition_expr: { field: 'parties[role=BUYER].is_client', operator: 'eq', value: true },
       cdm_path: 'parties[role=BUYER].decision_maker_id',
       xml_element: 'BuyrDcsnMkrCd',
       validation_rules: []
@@ -3246,6 +3279,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['NIDN', 'CCPT', 'LEIC', 'NIDE', 'OTHR'],
       condition: 'Required when Buyer Decision Maker Code is populated',
+      condition_expr: { field: 'parties[role=BUYER].decision_maker_id', operator: 'exists' },
       cdm_path: 'parties[role=BUYER].decision_maker_id_type',
       xml_element: 'BuyrDcsnMkrCdTp',
       validation_rules: ['ENUM_VALUE']
@@ -3258,6 +3292,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required when seller is a client',
+      condition_expr: { field: 'parties[role=SELLER].is_client', operator: 'eq', value: true },
       cdm_path: 'parties[role=SELLER].decision_maker_id',
       xml_element: 'SellrDcsnMkrCd',
       validation_rules: []
@@ -3270,6 +3305,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['NIDN', 'CCPT', 'LEIC', 'NIDE', 'OTHR'],
       condition: 'Required when Seller Decision Maker Code is populated',
+      condition_expr: { field: 'parties[role=SELLER].decision_maker_id', operator: 'exists' },
       cdm_path: 'parties[role=SELLER].decision_maker_id_type',
       xml_element: 'SellrDcsnMkrCdTp',
       validation_rules: ['ENUM_VALUE']
@@ -3282,6 +3318,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required when firm acts as buyer',
+      condition_expr: { field: 'execution.firm_is_buyer', operator: 'eq', value: true },
       cdm_path: 'execution.buyer_executor_id',
       xml_element: 'BuyrExctnWthnFrmCd',
       validation_rules: []
@@ -3294,6 +3331,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 50,
       condition: 'Required when firm acts as seller',
+      condition_expr: { field: 'execution.firm_is_seller', operator: 'eq', value: true },
       cdm_path: 'execution.seller_executor_id',
       xml_element: 'SellrExctnWthnFrmCd',
       validation_rules: []
@@ -3307,6 +3345,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 12,
       pattern: '^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
       condition: 'Required for derivative instruments',
+      condition_expr: { field: 'product.is_derivative', operator: 'eq', value: true },
       cdm_path: 'product.underlying_isin',
       xml_element: 'UndrlygInstrmISIN',
       validation_rules: ['ISIN_FORMAT']
@@ -3319,6 +3358,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 25,
       condition: 'Required when underlying is an index',
+      condition_expr: { field: 'product.underlying_type', operator: 'eq', value: 'INDEX' },
       cdm_path: 'product.underlying_index_name',
       xml_element: 'UndrlygInstrmIndxNm',
       validation_rules: []
@@ -3330,6 +3370,10 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'integer',
       requirement: 'conditional',
       condition: 'Required when underlying is an index with a term',
+      condition_expr: { and: [
+        { field: 'product.underlying_type', operator: 'eq', value: 'INDEX' },
+        { field: 'product.underlying_index_term_value', operator: 'exists' }
+      ]},
       cdm_path: 'product.underlying_index_term_value',
       xml_element: 'UndrlygInstrmIndxTermVal',
       validation_rules: ['POSITIVE_INTEGER']
@@ -3342,6 +3386,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['DAYS', 'WEEK', 'MNTH', 'YEAR'],
       condition: 'Required when Index Term Value is populated',
+      condition_expr: { field: 'product.underlying_index_term_value', operator: 'exists' },
       cdm_path: 'product.underlying_index_term_unit',
       xml_element: 'UndrlygInstrmIndxTermUnit',
       validation_rules: ['ENUM_VALUE']
@@ -3354,6 +3399,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['PUTO', 'CALL', 'OTHR'],
       condition: 'Required for options',
+      condition_expr: { field: 'product.is_option', operator: 'eq', value: true },
       cdm_path: 'product.option_type',
       xml_element: 'OptnTp',
       validation_rules: ['ENUM_VALUE']
@@ -3365,6 +3411,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'decimal',
       requirement: 'conditional',
       condition: 'Required for options',
+      condition_expr: { field: 'product.is_option', operator: 'eq', value: true },
       cdm_path: 'product.strike_price',
       transform: 'FORMAT_DECIMAL_18_13',
       xml_element: 'StrkPric',
@@ -3379,6 +3426,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 3,
       pattern: '^[A-Z]{3}$',
       condition: 'Required when Strike Price is populated',
+      condition_expr: { field: 'product.strike_price', operator: 'exists' },
       cdm_path: 'product.strike_price_currency',
       xml_element: 'StrkPricCcy',
       validation_rules: ['ISO_CURRENCY']
@@ -3391,6 +3439,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['AMER', 'EURO', 'BERM', 'ASIA'],
       condition: 'Required for options',
+      condition_expr: { field: 'product.is_option', operator: 'eq', value: true },
       cdm_path: 'product.option_exercise_style',
       xml_element: 'OptnExrcStyle',
       validation_rules: ['ENUM_VALUE']
@@ -3403,6 +3452,10 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       pattern: '^\\d{4}-\\d{2}-\\d{2}$',
       condition: 'Required for derivatives and bonds',
+      condition_expr: { or: [
+        { field: 'product.is_derivative', operator: 'eq', value: true },
+        { field: 'product.instrument_type', operator: 'eq', value: 'BOND' }
+      ]},
       cdm_path: 'product.maturity_date',
       xml_element: 'MtrtyDt',
       validation_rules: ['DATE_FORMAT']
@@ -3415,6 +3468,10 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       pattern: '^\\d{4}-\\d{2}-\\d{2}$',
       condition: 'Required for options and futures',
+      condition_expr: { or: [
+        { field: 'product.is_option', operator: 'eq', value: true },
+        { field: 'product.is_future', operator: 'eq', value: true }
+      ]},
       cdm_path: 'product.expiry_date',
       xml_element: 'XpryDt',
       validation_rules: ['DATE_FORMAT']
@@ -3427,6 +3484,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['PHYS', 'CASH', 'OPTL'],
       condition: 'Required for derivatives',
+      condition_expr: { field: 'product.is_derivative', operator: 'eq', value: true },
       cdm_path: 'product.delivery_type',
       xml_element: 'DlvryTp',
       validation_rules: ['ENUM_VALUE']
@@ -3438,6 +3496,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'decimal',
       requirement: 'conditional',
       condition: 'Required for derivatives',
+      condition_expr: { field: 'product.is_derivative', operator: 'eq', value: true },
       cdm_path: 'product.price_multiplier',
       transform: 'FORMAT_DECIMAL_18_5',
       xml_element: 'PricMltplr',
@@ -3450,6 +3509,10 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'decimal',
       requirement: 'conditional',
       condition: 'Required for swaps and forwards',
+      condition_expr: { or: [
+        { field: 'product.is_swap', operator: 'eq', value: true },
+        { field: 'product.is_forward', operator: 'eq', value: true }
+      ]},
       cdm_path: 'product.notional_amount',
       transform: 'FORMAT_DECIMAL_18_5',
       xml_element: 'NtnlAmt',
@@ -3464,6 +3527,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 3,
       pattern: '^[A-Z]{3}$',
       condition: 'Required when Notional Amount is populated',
+      condition_expr: { field: 'product.notional_amount', operator: 'exists' },
       cdm_path: 'product.notional_currency',
       xml_element: 'NtnlCcy',
       validation_rules: ['ISO_CURRENCY']
@@ -3499,6 +3563,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 2,
       pattern: '^[A-Z]{2}$',
       condition: 'Required when trading through a branch',
+      condition_expr: { field: 'execution.is_branch_trade', operator: 'eq', value: true },
       cdm_path: 'parties[role=EXECUTING].branch_membership_country',
       xml_element: 'CtryOfBrnchMmbrshp',
       validation_rules: ['ISO_COUNTRY']
@@ -3512,6 +3577,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       max_length: 2,
       pattern: '^[A-Z]{2}$',
       condition: 'Required when trading through a branch',
+      condition_expr: { field: 'execution.is_branch_trade', operator: 'eq', value: true },
       cdm_path: 'parties[role=EXECUTING].branch_supervision_country',
       xml_element: 'CtryOfBrnchSprvsn',
       validation_rules: ['ISO_COUNTRY']
@@ -3524,6 +3590,10 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       enum_values: ['INCR', 'DECR'],
       condition: 'Required for notional changes in derivatives',
+      condition_expr: { and: [
+        { field: 'product.is_derivative', operator: 'eq', value: true },
+        { field: 'trade_event.action_type', operator: 'in', value: ['MODI', 'AMND'] }
+      ]},
       cdm_path: 'trade_event.notional_change_direction',
       xml_element: 'DerivNtnlIncrDcrs',
       validation_rules: ['ENUM_VALUE']
@@ -3545,6 +3615,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'boolean',
       requirement: 'conditional',
       condition: 'Required when reporting firm made investment decision',
+      condition_expr: { field: 'execution.trading_capacity', operator: 'eq', value: 'DEAL' },
       cdm_path: 'execution.investment_decision_by_algo',
       xml_element: 'InvstmtDcsnWthnFrmAlgo',
       validation_rules: []
@@ -3556,6 +3627,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       data_type: 'boolean',
       requirement: 'conditional',
       condition: 'Required when firm executed the transaction',
+      condition_expr: { field: 'execution.firm_executed', operator: 'eq', value: true },
       cdm_path: 'execution.execution_by_algo',
       xml_element: 'ExctnWthnFrmAlgo',
       validation_rules: []
@@ -3578,6 +3650,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 52,
       condition: 'Required when Report Status is AMND',
+      condition_expr: { field: 'trade_event.action_type', operator: 'eq', value: 'AMND' },
       cdm_path: 'trade_event.amended_report_reference',
       xml_element: 'RptToBeAmndd',
       validation_rules: []
@@ -3590,6 +3663,7 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       requirement: 'conditional',
       max_length: 52,
       condition: 'Required when Report Status is CANC',
+      condition_expr: { field: 'trade_event.action_type', operator: 'eq', value: 'CANC' },
       cdm_path: 'trade_event.cancelled_report_reference',
       xml_element: 'RptToBeCancld',
       validation_rules: []
@@ -3845,6 +3919,206 @@ export const MIFIR_PACKAGE: RegulationPackage = {
       expression: 'IF Report_Status = CANC THEN Cancelled_Report_Reference is not empty',
       error_message: 'Original transaction reference required for cancellation reports',
       affected_fields: ['MIFIR_064', 'MIFIR_065']
+    },
+    {
+      rule_id: 'MIFIR_VR026',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum validation per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['MIFIR_004', 'MIFIR_005', 'MIFIR_007', 'MIFIR_009']
+    },
+    {
+      rule_id: 'MIFIR_VR027',
+      name: 'ISIN Checksum Validation',
+      description: 'ISIN must pass Luhn checksum validation',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'isin_checksum_valid(ISIN)',
+      error_message: 'ISIN checksum validation failed',
+      affected_fields: ['MIFIR_020']
+    },
+    {
+      rule_id: 'MIFIR_VR028',
+      name: 'Valid MIC Code',
+      description: 'MIC must be registered in ISO 10383 registry',
+      severity: 'WARNING',
+      rule_type: 'referential',
+      expression: 'MIC IN valid_mic_codes OR MIC IN (XOFF, XXXX, SINT)',
+      error_message: 'MIC code not found in ISO 10383 registry',
+      affected_fields: ['MIFIR_017']
+    },
+    {
+      rule_id: 'MIFIR_VR029',
+      name: 'Valid Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN ISO_4217_CURRENCIES',
+      error_message: 'Currency code not in ISO 4217',
+      affected_fields: ['MIFIR_015', 'MIFIR_013']
+    },
+    {
+      rule_id: 'MIFIR_VR030',
+      name: 'Trading Time Not Future',
+      description: 'Trading timestamp cannot be in the future',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Trading_DateTime <= NOW()',
+      error_message: 'Trading timestamp cannot be in the future',
+      affected_fields: ['MIFIR_010']
+    },
+    {
+      rule_id: 'MIFIR_VR031',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transaction reports should be submitted by end of T+1',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Submission_DateTime <= Trading_DateTime + 1 business day',
+      error_message: 'Report may be late - T+1 reporting deadline applies',
+      affected_fields: ['MIFIR_010']
+    },
+    {
+      rule_id: 'MIFIR_VR032',
+      name: 'Reasonable Price Range',
+      description: 'Price should be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Price < 1e12',
+      error_message: 'Price appears unusually high',
+      affected_fields: ['MIFIR_014']
+    },
+    {
+      rule_id: 'MIFIR_VR033',
+      name: 'Reasonable Quantity Range',
+      description: 'Quantity should be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Quantity < 1e15',
+      error_message: 'Quantity appears unusually high',
+      affected_fields: ['MIFIR_012']
+    },
+    {
+      rule_id: 'MIFIR_VR034',
+      name: 'Net Amount Consistency',
+      description: 'Net amount should approximately equal price times quantity',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'ABS(Net_Amount - Price * Quantity) / Net_Amount < 0.01',
+      error_message: 'Net amount does not match price * quantity',
+      affected_fields: ['MIFIR_014', 'MIFIR_012', 'MIFIR_016']
+    },
+    {
+      rule_id: 'MIFIR_VR035',
+      name: 'Venue Transaction ID for On-Venue',
+      description: 'Trading venue transaction ID required for on-venue trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Venue NOT IN (XOFF, XXXX, SINT) THEN Venue_Transaction_ID is not empty',
+      error_message: 'Trading venue transaction ID required for on-venue transactions',
+      affected_fields: ['MIFIR_003', 'MIFIR_017']
+    },
+    {
+      rule_id: 'MIFIR_VR036',
+      name: 'Instrument Full Name for Non-ISIN',
+      description: 'Instrument full name required when ISIN not available',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Instrument_ID_Type = OTHR THEN Instrument_Full_Name is not empty',
+      error_message: 'Instrument full name required when ISIN not available',
+      affected_fields: ['MIFIR_019', 'MIFIR_021']
+    },
+    {
+      rule_id: 'MIFIR_VR037',
+      name: 'Short Selling Only for Sells',
+      description: 'Short selling indicator only valid for sell transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Short_Selling_Indicator is not empty THEN Buy_Sell = SELL',
+      error_message: 'Short selling indicator only valid for sell transactions',
+      affected_fields: ['MIFIR_031']
+    },
+    {
+      rule_id: 'MIFIR_VR038',
+      name: 'Valid Waiver Indicator',
+      description: 'Waiver indicator must be valid MiFIR pre-trade waiver code',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Waiver_Indicator IN (OILQ, NLIQ, PRIC, SIZE, RFPT, BENC, ILQD, RPRI, TNCP)',
+      error_message: 'Invalid waiver indicator code',
+      affected_fields: ['MIFIR_030']
+    },
+    {
+      rule_id: 'MIFIR_VR039',
+      name: 'Valid Short Selling Indicator',
+      description: 'Short selling indicator must be valid code',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Short_Selling_Indicator IN (SESH, SSEX, SELL, UNDI)',
+      error_message: 'Invalid short selling indicator',
+      affected_fields: ['MIFIR_031']
+    },
+    {
+      rule_id: 'MIFIR_VR040',
+      name: 'Maturity Date After Trading Date',
+      description: 'Maturity date must be on or after trading date',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Maturity_Date >= Trading_Date',
+      error_message: 'Maturity date cannot be before trading date',
+      affected_fields: ['MIFIR_027', 'MIFIR_010']
+    },
+    {
+      rule_id: 'MIFIR_VR041',
+      name: 'CFI Code Format',
+      description: 'CFI code must be 6 uppercase letters per ISO 10962',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'CFI matches ^[A-Z]{6}$',
+      error_message: 'Invalid CFI code format',
+      affected_fields: ['MIFIR_022']
+    },
+    {
+      rule_id: 'MIFIR_VR042',
+      name: 'Country Code Validation',
+      description: 'Country must be valid ISO 3166-1 alpha-2 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Country IN ISO_3166_COUNTRIES',
+      error_message: 'Country code not in ISO 3166-1',
+      affected_fields: ['MIFIR_018']
+    },
+    {
+      rule_id: 'MIFIR_VR043',
+      name: 'Natural Person Names Required',
+      description: 'First name and surname required for natural person identification',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF ID_Type IN (NATI, CCPT, CONCAT) THEN First_Name AND Surname are not empty',
+      error_message: 'First name and surname required for natural person identification',
+      affected_fields: ['MIFIR_006', 'MIFIR_007']
+    },
+    {
+      rule_id: 'MIFIR_VR044',
+      name: 'Decision Maker Country Required',
+      description: 'Country of branch required when decision maker is specified',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Decision_Maker_ID is not empty THEN Country_of_Branch is not empty',
+      error_message: 'Country of branch should be specified when decision maker provided',
+      affected_fields: ['MIFIR_018']
+    },
+    {
+      rule_id: 'MIFIR_VR045',
+      name: 'Amendment Reference Required',
+      description: 'Original transaction reference required for amendments',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Report_Status = AMND THEN Original_Report_Reference is not empty',
+      error_message: 'Original transaction reference required for amendment reports',
+      affected_fields: ['MIFIR_001', 'MIFIR_065']
     }
   ]
 };
@@ -3865,7 +4139,7 @@ export const SFTR_PACKAGE: RegulationPackage = {
   mandatory_fields: 20,
   conditional_fields: 12,
   optional_fields: 5,
-  validation_rule_count: 9,
+  validation_rule_count: 50,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:iso:std:iso:20022:tech:xsd:auth.052.001.01',
   output_root_element: 'Document',
@@ -4442,6 +4716,416 @@ export const SFTR_PACKAGE: RegulationPackage = {
       expression: 'Margin_Currency is consistent across all margin fields',
       error_message: 'Margin currency should be consistent',
       affected_fields: ['SFTR_023', 'SFTR_024', 'SFTR_025', 'SFTR_026', 'SFTR_027']
+    },
+    {
+      rule_id: 'SFTR_VR010',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum validation per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['SFTR_001', 'SFTR_002', 'SFTR_003', 'SFTR_032', 'SFTR_033', 'SFTR_034']
+    },
+    {
+      rule_id: 'SFTR_VR011',
+      name: 'ISIN Checksum Validation',
+      description: 'ISIN must pass Luhn checksum per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'isin_luhn_valid(ISIN)',
+      error_message: 'Invalid ISIN checksum',
+      affected_fields: ['SFTR_018']
+    },
+    {
+      rule_id: 'SFTR_VR012',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['SFTR_013', 'SFTR_021', 'SFTR_027']
+    },
+    {
+      rule_id: 'SFTR_VR013',
+      name: 'ISO Country Code',
+      description: 'Country must be valid ISO 3166-1 alpha-2 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Country IN iso_3166_alpha2',
+      error_message: 'Invalid ISO 3166-1 country code',
+      affected_fields: ['SFTR_031', 'SFTR_029']
+    },
+    {
+      rule_id: 'SFTR_VR014',
+      name: 'MIC Code Validation',
+      description: 'Trading venue must be valid ISO 10383 MIC',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'MIC IN iso_10383_mics',
+      error_message: 'Invalid MIC code',
+      affected_fields: ['SFTR_006']
+    },
+    {
+      rule_id: 'SFTR_VR015',
+      name: 'CFI Code Format',
+      description: 'CFI code must be valid ISO 10962 format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'CFI matches ^[A-Z]{6}$',
+      error_message: 'CFI must be 6 uppercase letters per ISO 10962',
+      affected_fields: ['SFTR_016']
+    },
+    {
+      rule_id: 'SFTR_VR016',
+      name: 'Execution Date Not Future',
+      description: 'Execution date cannot be in the future',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['SFTR_008']
+    },
+    {
+      rule_id: 'SFTR_VR017',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Value_Date',
+      error_message: 'Maturity date must be after value date',
+      affected_fields: ['SFTR_009', 'SFTR_010']
+    },
+    {
+      rule_id: 'SFTR_VR018',
+      name: 'Repo Rate Reasonable',
+      description: 'Repo rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Repo_Rate >= -5 AND Repo_Rate <= 50',
+      error_message: 'Repo rate outside reasonable bounds (-5% to 50%)',
+      affected_fields: ['SFTR_014']
+    },
+    {
+      rule_id: 'SFTR_VR019',
+      name: 'Haircut Percentage Valid',
+      description: 'Haircut percentage must be between 0 and 100',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Haircut_Percentage >= 0 AND Haircut_Percentage <= 100',
+      error_message: 'Haircut percentage must be between 0 and 100',
+      affected_fields: ['SFTR_022']
+    },
+    {
+      rule_id: 'SFTR_VR020',
+      name: 'Action Type Consistency',
+      description: 'Action type must match report lifecycle state',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Action_Type IN [NEWT, MODI, ETRM, CORR, COLU, VALU, MARG, REUU]',
+      error_message: 'Invalid action type for SFTR',
+      affected_fields: ['SFTR_007']
+    },
+    {
+      rule_id: 'SFTR_VR021',
+      name: 'SFT Type Valid',
+      description: 'SFT type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'SFT_Type IN [REPO, BSBA, SLBE, MGLD]',
+      error_message: 'Invalid SFT type. Must be REPO, BSBA, SLBE, or MGLD',
+      affected_fields: ['SFTR_005']
+    },
+    {
+      rule_id: 'SFTR_VR022',
+      name: 'Counterparty Nature Valid',
+      description: 'Counterparty nature must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Nature IN [FINC, NFIN]',
+      error_message: 'Counterparty nature must be FINC or NFIN',
+      affected_fields: ['SFTR_028']
+    },
+    {
+      rule_id: 'SFTR_VR023',
+      name: 'Securities Lending Fields Required',
+      description: 'Securities lending specific fields required when SFT_Type is SLBE',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF SFT_Type = SLBE THEN Lending_Fee is not empty',
+      error_message: 'Lending fee required for securities lending transactions',
+      affected_fields: ['SFTR_005', 'SFTR_015']
+    },
+    {
+      rule_id: 'SFTR_VR024',
+      name: 'Margin Lending Fields Required',
+      description: 'Margin lending specific fields required when SFT_Type is MGLD',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF SFT_Type = MGLD THEN Initial_Margin is not empty',
+      error_message: 'Initial margin required for margin lending transactions',
+      affected_fields: ['SFTR_005', 'SFTR_023']
+    },
+    {
+      rule_id: 'SFTR_VR025',
+      name: 'Collateral Required for Repo',
+      description: 'Collateral data required for repo transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF SFT_Type = REPO THEN Collateral_ISIN is not empty',
+      error_message: 'Collateral ISIN required for repo transactions',
+      affected_fields: ['SFTR_005', 'SFTR_018']
+    },
+    {
+      rule_id: 'SFTR_VR026',
+      name: 'Termination Date Consistency',
+      description: 'Early termination date must be before original maturity',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = ETRM THEN Termination_Date <= Maturity_Date',
+      error_message: 'Early termination date must be before original maturity date',
+      affected_fields: ['SFTR_007', 'SFTR_010', 'SFTR_011']
+    },
+    {
+      rule_id: 'SFTR_VR027',
+      name: 'T+1 Reporting Deadline',
+      description: 'SFT must be reported within T+1 of execution',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day',
+      error_message: 'SFT should be reported within T+1 of execution',
+      affected_fields: ['SFTR_008']
+    },
+    {
+      rule_id: 'SFTR_VR028',
+      name: 'Collateral Quality Valid',
+      description: 'Collateral quality classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Collateral_Quality IN [INVG, NIVG, NOTR, NOAP]',
+      error_message: 'Invalid collateral quality classification',
+      affected_fields: ['SFTR_019']
+    },
+    {
+      rule_id: 'SFTR_VR029',
+      name: 'Collateral Component Unique',
+      description: 'Each collateral component must have unique identifier',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Collateral_Component_IDs are unique within transaction',
+      error_message: 'Duplicate collateral component identifier',
+      affected_fields: ['SFTR_017']
+    },
+    {
+      rule_id: 'SFTR_VR030',
+      name: 'Master Agreement Type Valid',
+      description: 'Master agreement type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Master_Agreement_Type IN [GMRA, GMSLA, ISDA, OTHER]',
+      error_message: 'Invalid master agreement type',
+      affected_fields: ['SFTR_035']
+    },
+    {
+      rule_id: 'SFTR_VR031',
+      name: 'Reuse Flag Consistency',
+      description: 'Reuse rights flag must be consistent with collateral terms',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Reuse_Allowed = true THEN Reuse_Disclosure is not empty',
+      error_message: 'Reuse disclosure required when reuse is allowed',
+      affected_fields: ['SFTR_036', 'SFTR_037']
+    },
+    {
+      rule_id: 'SFTR_VR032',
+      name: 'Triparty Agent Required',
+      description: 'Triparty agent LEI required for triparty SFTs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Triparty_Indicator = true THEN Triparty_Agent_LEI is not empty',
+      error_message: 'Triparty agent LEI required for triparty SFTs',
+      affected_fields: ['SFTR_033']
+    },
+    {
+      rule_id: 'SFTR_VR033',
+      name: 'Floating Rate Index Valid',
+      description: 'Floating rate index must be valid benchmark reference',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'IF Rate_Type = FLOA THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate SFTs',
+      affected_fields: ['SFTR_014']
+    },
+    {
+      rule_id: 'SFTR_VR034',
+      name: 'Spread Reasonable',
+      description: 'Spread over benchmark must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['SFTR_014']
+    },
+    {
+      rule_id: 'SFTR_VR035',
+      name: 'Quantity Positive',
+      description: 'Security quantity must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Security_Quantity > 0',
+      error_message: 'Security quantity must be greater than zero',
+      affected_fields: ['SFTR_019']
+    },
+    {
+      rule_id: 'SFTR_VR036',
+      name: 'Price Non-Negative',
+      description: 'Security price must be non-negative',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Security_Price >= 0',
+      error_message: 'Security price cannot be negative',
+      affected_fields: ['SFTR_020']
+    },
+    {
+      rule_id: 'SFTR_VR037',
+      name: 'Broker LEI When Intermediated',
+      description: 'Broker LEI required when transaction is intermediated',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Intermediary_Indicator = true THEN Broker_LEI is not empty',
+      error_message: 'Broker LEI required for intermediated transactions',
+      affected_fields: ['SFTR_034']
+    },
+    {
+      rule_id: 'SFTR_VR038',
+      name: 'Buy-Sell Back Price Consistency',
+      description: 'For buy-sell back, forward price must be greater than spot price',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF SFT_Type = BSBA THEN Forward_Price >= Spot_Price',
+      error_message: 'Forward price should typically be >= spot price for buy-sell back',
+      affected_fields: ['SFTR_005', 'SFTR_012']
+    },
+    {
+      rule_id: 'SFTR_VR039',
+      name: 'Collateral Availability Date',
+      description: 'Collateral availability date must be on or after value date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Collateral_Availability_Date >= Value_Date',
+      error_message: 'Collateral availability date must be on or after value date',
+      affected_fields: ['SFTR_009']
+    },
+    {
+      rule_id: 'SFTR_VR040',
+      name: 'Minimum Termination Notice Valid',
+      description: 'Minimum termination notice must be non-negative',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Min_Notice_Period >= 0',
+      error_message: 'Minimum notice period cannot be negative',
+      affected_fields: ['SFTR_036']
+    },
+    {
+      rule_id: 'SFTR_VR041',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and other counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Counterparty_LEI != Other_Counterparty_LEI',
+      error_message: 'Reporting and other counterparty LEIs must be different',
+      affected_fields: ['SFTR_002', 'SFTR_003']
+    },
+    {
+      rule_id: 'SFTR_VR042',
+      name: 'Sector Code Valid',
+      description: 'Sector classification must be valid NACE/GICS code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Sector_Code IN valid_sector_codes',
+      error_message: 'Invalid sector classification code',
+      affected_fields: ['SFTR_030']
+    },
+    {
+      rule_id: 'SFTR_VR043',
+      name: 'Margin Type Valid',
+      description: 'Margin type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Margin_Type IN [SICA, SIUR, CASH, SECU, BOTH]',
+      error_message: 'Invalid margin type',
+      affected_fields: ['SFTR_024']
+    },
+    {
+      rule_id: 'SFTR_VR044',
+      name: 'Reporting Counterparty Side Valid',
+      description: 'Reporting counterparty side must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Reporting_Side IN [LEND, BORR]',
+      error_message: 'Reporting counterparty side must be LEND or BORR',
+      affected_fields: ['SFTR_028']
+    },
+    {
+      rule_id: 'SFTR_VR045',
+      name: 'Collateral Pool Identifier',
+      description: 'Collateral pool must have valid identifier when applicable',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Collateral_Pool = true THEN Pool_Identifier is not empty',
+      error_message: 'Pool identifier required when using collateral pool',
+      affected_fields: ['SFTR_018']
+    },
+    {
+      rule_id: 'SFTR_VR046',
+      name: 'Corporate Action Indicator',
+      description: 'Corporate action type required when indicator is set',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Corporate_Action = true THEN Action_Type_Code is not empty',
+      error_message: 'Corporate action type code required',
+      affected_fields: ['SFTR_037']
+    },
+    {
+      rule_id: 'SFTR_VR047',
+      name: 'Settlement Date Sequence',
+      description: 'Settlement date must be on or after execution date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Settlement_Date >= Execution_Date',
+      error_message: 'Settlement date must be on or after execution date',
+      affected_fields: ['SFTR_008', 'SFTR_009']
+    },
+    {
+      rule_id: 'SFTR_VR048',
+      name: 'Reinvestment Cash Flag Consistency',
+      description: 'Reinvestment details required when cash reinvestment flag is set',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Reinvestment_Flag = true THEN Reinvestment_Type is not empty',
+      error_message: 'Reinvestment type required when reinvestment flag is set',
+      affected_fields: ['SFTR_036']
+    },
+    {
+      rule_id: 'SFTR_VR049',
+      name: 'Unique Transaction Reference',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['SFTR_004']
+    },
+    {
+      rule_id: 'SFTR_VR050',
+      name: 'Modification Reason Required',
+      description: 'Modification reason required for MODI action type',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = MODI THEN Modification_Reason is not empty',
+      error_message: 'Modification reason required for modification reports',
+      affected_fields: ['SFTR_007']
     }
   ]
 };
@@ -4462,7 +5146,7 @@ export const CFTC_PACKAGE: RegulationPackage = {
   mandatory_fields: 85,
   conditional_fields: 30,
   optional_fields: 13,
-  validation_rule_count: 25,
+  validation_rule_count: 40,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:cftc:swap:data:reporting',
   output_root_element: 'SwapDataReport',
@@ -4775,6 +5459,356 @@ export const CFTC_PACKAGE: RegulationPackage = {
       expression: 'Notional_Amount > 0',
       error_message: 'Notional amount must be greater than zero',
       affected_fields: ['CFTC_010']
+    },
+    {
+      rule_id: 'CFTC_VR006',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['CFTC_001', 'CFTC_002', 'CFTC_014', 'CFTC_015']
+    },
+    {
+      rule_id: 'CFTC_VR007',
+      name: 'USI Format Validation',
+      description: 'USI must be valid format per CFTC requirements',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'USI matches ^[A-Z0-9]{10,52}$',
+      error_message: 'Invalid USI format',
+      affected_fields: ['CFTC_003']
+    },
+    {
+      rule_id: 'CFTC_VR008',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['CFTC_004']
+    },
+    {
+      rule_id: 'CFTC_VR009',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['CFTC_011', 'CFTC_018']
+    },
+    {
+      rule_id: 'CFTC_VR010',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['CFTC_006']
+    },
+    {
+      rule_id: 'CFTC_VR011',
+      name: 'T+2 Reporting Deadline',
+      description: 'Swaps must be reported within T+2 of execution',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 2 business days',
+      error_message: 'Swap should be reported within T+2',
+      affected_fields: ['CFTC_006']
+    },
+    {
+      rule_id: 'CFTC_VR012',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid CFTC enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [SNEW, MODI, TERM, NOVA, COMP, CORR, EROR]',
+      error_message: 'Invalid action type for CFTC reporting',
+      affected_fields: ['CFTC_005']
+    },
+    {
+      rule_id: 'CFTC_VR013',
+      name: 'Event Type Valid',
+      description: 'Event type must be valid CFTC enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Event_Type IN [TRAD, NOVA, COMP, ETRM, CLRG, EXER, MATU]',
+      error_message: 'Invalid event type',
+      affected_fields: ['CFTC_007']
+    },
+    {
+      rule_id: 'CFTC_VR014',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['CFTC_001', 'CFTC_002']
+    },
+    {
+      rule_id: 'CFTC_VR015',
+      name: 'SDR Required',
+      description: 'Swap Data Repository must be identified',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'SDR_ID is not empty',
+      error_message: 'SDR identifier is required',
+      affected_fields: ['CFTC_016']
+    },
+    {
+      rule_id: 'CFTC_VR016',
+      name: 'Platform ID When Executed On SEF',
+      description: 'Platform ID required when executed on SEF/DCM',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Execution_Venue != OTC THEN Platform_ID is not empty',
+      error_message: 'Platform ID required for SEF/DCM executed swaps',
+      affected_fields: ['CFTC_017']
+    },
+    {
+      rule_id: 'CFTC_VR017',
+      name: 'Block Trade Indicator',
+      description: 'Block trade fields required when indicator is true',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Block_Trade = true THEN Block_Trade_Details is not empty',
+      error_message: 'Block trade details required when block trade indicator is set',
+      affected_fields: ['CFTC_019']
+    },
+    {
+      rule_id: 'CFTC_VR018',
+      name: 'Large Notional Off-Facility Indicator',
+      description: 'LNOF indicator required for large notional swaps',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Notional > LNOF_Threshold THEN LNOF_Indicator is not empty',
+      error_message: 'Large notional off-facility indicator may be required',
+      affected_fields: ['CFTC_010', 'CFTC_020']
+    },
+    {
+      rule_id: 'CFTC_VR019',
+      name: 'Price Notation Valid',
+      description: 'Price notation must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Price_Notation IN [PERC, DCML, SPRD, BPNT]',
+      error_message: 'Invalid price notation',
+      affected_fields: ['CFTC_012']
+    },
+    {
+      rule_id: 'CFTC_VR020',
+      name: 'Valuation Amount Non-Negative',
+      description: 'Valuation amount must be non-negative',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'ABS(Valuation_Amount) >= 0',
+      error_message: 'Invalid valuation amount',
+      affected_fields: ['CFTC_021']
+    },
+    {
+      rule_id: 'CFTC_VR021',
+      name: 'Valuation Currency Required',
+      description: 'Currency required when valuation is provided',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Valuation_Amount is not empty THEN Valuation_Currency is not empty',
+      error_message: 'Valuation currency required when valuation is provided',
+      affected_fields: ['CFTC_021', 'CFTC_022']
+    },
+    {
+      rule_id: 'CFTC_VR022',
+      name: 'Clearing Requirement Flag',
+      description: 'Clearing requirement determination must be provided',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'Clearing_Requirement_Exemption is not empty',
+      error_message: 'Clearing requirement exemption status required',
+      affected_fields: ['CFTC_023']
+    },
+    {
+      rule_id: 'CFTC_VR023',
+      name: 'End User Exception',
+      description: 'End user exception details required when claimed',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF End_User_Exception = true THEN Exception_Type is not empty',
+      error_message: 'Exception type required when end user exception is claimed',
+      affected_fields: ['CFTC_024']
+    },
+    {
+      rule_id: 'CFTC_VR024',
+      name: 'Inter-Affiliate Indicator',
+      description: 'Inter-affiliate details required when indicator is set',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Inter_Affiliate = true THEN Affiliate_LEI is not empty',
+      error_message: 'Affiliate LEI required for inter-affiliate swaps',
+      affected_fields: ['CFTC_025']
+    },
+    {
+      rule_id: 'CFTC_VR025',
+      name: 'Submission Timestamp',
+      description: 'Submission timestamp required and must be valid',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'Submission_Timestamp matches ISO datetime',
+      error_message: 'Invalid submission timestamp format',
+      affected_fields: ['CFTC_026']
+    },
+    {
+      rule_id: 'CFTC_VR026',
+      name: 'Reporting Side Valid',
+      description: 'Reporting side must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Reporting_Side IN [BUYR, SELR]',
+      error_message: 'Reporting side must be BUYR or SELR',
+      affected_fields: ['CFTC_027']
+    },
+    {
+      rule_id: 'CFTC_VR027',
+      name: 'Day Count Convention',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['CFTC_028']
+    },
+    {
+      rule_id: 'CFTC_VR028',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['CFTC_029']
+    },
+    {
+      rule_id: 'CFTC_VR029',
+      name: 'Rate Reset Frequency',
+      description: 'Reset frequency valid for floating rate swaps',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Reset_Frequency is not empty',
+      error_message: 'Reset frequency required for floating rate leg',
+      affected_fields: ['CFTC_030']
+    },
+    {
+      rule_id: 'CFTC_VR030',
+      name: 'Floating Rate Index',
+      description: 'Floating rate index required for floating legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['CFTC_031']
+    },
+    {
+      rule_id: 'CFTC_VR031',
+      name: 'Spread Reasonable',
+      description: 'Spread over benchmark within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['CFTC_032']
+    },
+    {
+      rule_id: 'CFTC_VR032',
+      name: 'Fixed Rate Reasonable',
+      description: 'Fixed rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Fixed_Rate >= -5 AND Fixed_Rate <= 30',
+      error_message: 'Fixed rate outside reasonable bounds',
+      affected_fields: ['CFTC_033']
+    },
+    {
+      rule_id: 'CFTC_VR033',
+      name: 'Option Style Valid',
+      description: 'Option style must be valid for swaptions',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'IF Product_Class = SWAPTION THEN Option_Style IN [AMER, EURO, BERM]',
+      error_message: 'Invalid option style for swaption',
+      affected_fields: ['CFTC_034']
+    },
+    {
+      rule_id: 'CFTC_VR034',
+      name: 'Option Expiry Before Underlying Maturity',
+      description: 'Option expiry must be before underlying swap maturity',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Product_Class = SWAPTION THEN Option_Expiry <= Maturity_Date',
+      error_message: 'Option expiry must be on or before underlying maturity',
+      affected_fields: ['CFTC_035', 'CFTC_009']
+    },
+    {
+      rule_id: 'CFTC_VR035',
+      name: 'Strike Price Required for Options',
+      description: 'Strike price required for option products',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Product_Class IN [SWAPTION, CAP, FLOOR] THEN Strike_Price is not empty',
+      error_message: 'Strike price required for option products',
+      affected_fields: ['CFTC_036']
+    },
+    {
+      rule_id: 'CFTC_VR036',
+      name: 'Compression Indicator',
+      description: 'Original USI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_USI is not empty',
+      error_message: 'Original USI required for compression trades',
+      affected_fields: ['CFTC_005', 'CFTC_037']
+    },
+    {
+      rule_id: 'CFTC_VR037',
+      name: 'Novation LEIs',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['CFTC_038', 'CFTC_039']
+    },
+    {
+      rule_id: 'CFTC_VR038',
+      name: 'Dealer/MSP Indicator',
+      description: 'Dealer status must be indicated',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'SD_MSP_Indicator is not empty',
+      error_message: 'Swap Dealer/MSP indicator required',
+      affected_fields: ['CFTC_040']
+    },
+    {
+      rule_id: 'CFTC_VR039',
+      name: 'Financial Entity Classification',
+      description: 'Financial entity classification required',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Entity_Classification IN [SD, MSP, FINL, NFIN]',
+      error_message: 'Invalid financial entity classification',
+      affected_fields: ['CFTC_041']
+    },
+    {
+      rule_id: 'CFTC_VR040',
+      name: 'Unique USI Within SDR',
+      description: 'USI must be unique within the SDR',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'USI is unique per SDR',
+      error_message: 'Duplicate USI detected within SDR',
+      affected_fields: ['CFTC_003']
     }
   ]
 };
@@ -4795,7 +5829,7 @@ export const JFSA_PACKAGE: RegulationPackage = {
   mandatory_fields: 65,
   conditional_fields: 22,
   optional_fields: 8,
-  validation_rule_count: 18,
+  validation_rule_count: 35,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:jfsa:otc:derivatives:reporting',
   output_root_element: 'DerivativesReport',
@@ -5020,6 +6054,326 @@ export const JFSA_PACKAGE: RegulationPackage = {
       expression: 'IF Cleared = true THEN CCP_LEI is not empty',
       error_message: 'CCP LEI required when cleared',
       affected_fields: ['JFSA_014', 'JFSA_015']
+    },
+    {
+      rule_id: 'JFSA_VR004',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['JFSA_001', 'JFSA_002', 'JFSA_015']
+    },
+    {
+      rule_id: 'JFSA_VR005',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['JFSA_003']
+    },
+    {
+      rule_id: 'JFSA_VR006',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['JFSA_004']
+    },
+    {
+      rule_id: 'JFSA_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['JFSA_011', 'JFSA_013']
+    },
+    {
+      rule_id: 'JFSA_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future (JST)',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime_jst',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['JFSA_007']
+    },
+    {
+      rule_id: 'JFSA_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['JFSA_008', 'JFSA_009']
+    },
+    {
+      rule_id: 'JFSA_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['JFSA_010']
+    },
+    {
+      rule_id: 'JFSA_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid JFSA enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, VALU]',
+      error_message: 'Invalid action type for JFSA reporting',
+      affected_fields: ['JFSA_005']
+    },
+    {
+      rule_id: 'JFSA_VR012',
+      name: 'Event Type Valid',
+      description: 'Event type must be valid JFSA enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Event_Type IN [TRAD, NOVA, COMP, ETRM, CLRG, EXER]',
+      error_message: 'Invalid event type',
+      affected_fields: ['JFSA_006']
+    },
+    {
+      rule_id: 'JFSA_VR013',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['JFSA_001', 'JFSA_002']
+    },
+    {
+      rule_id: 'JFSA_VR014',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transactions must be reported within T+1 (JST)',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day JST',
+      error_message: 'Transaction should be reported within T+1',
+      affected_fields: ['JFSA_007']
+    },
+    {
+      rule_id: 'JFSA_VR015',
+      name: 'ISIN Format Validation',
+      description: 'ISIN must be valid format per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'ISIN matches ^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
+      error_message: 'Invalid ISIN format',
+      affected_fields: ['JFSA_016']
+    },
+    {
+      rule_id: 'JFSA_VR016',
+      name: 'ISIN Checksum Validation',
+      description: 'ISIN must pass Luhn checksum',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'isin_luhn_valid(ISIN)',
+      error_message: 'Invalid ISIN checksum',
+      affected_fields: ['JFSA_016']
+    },
+    {
+      rule_id: 'JFSA_VR017',
+      name: 'Valuation Amount Non-Negative',
+      description: 'Valuation must be a valid number',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'ABS(Valuation_Amount) >= 0',
+      error_message: 'Invalid valuation amount',
+      affected_fields: ['JFSA_017']
+    },
+    {
+      rule_id: 'JFSA_VR018',
+      name: 'Valuation Currency Required',
+      description: 'Currency required when valuation is provided',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Valuation_Amount is not empty THEN Valuation_Currency is not empty',
+      error_message: 'Valuation currency required when valuation is provided',
+      affected_fields: ['JFSA_017', 'JFSA_018']
+    },
+    {
+      rule_id: 'JFSA_VR019',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid JFSA category',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['JFSA_019']
+    },
+    {
+      rule_id: 'JFSA_VR020',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['JFSA_020']
+    },
+    {
+      rule_id: 'JFSA_VR021',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['JFSA_021']
+    },
+    {
+      rule_id: 'JFSA_VR022',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['JFSA_022']
+    },
+    {
+      rule_id: 'JFSA_VR023',
+      name: 'Spread Reasonable',
+      description: 'Spread over benchmark must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['JFSA_023']
+    },
+    {
+      rule_id: 'JFSA_VR024',
+      name: 'Fixed Rate Reasonable',
+      description: 'Fixed rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Fixed_Rate >= -5 AND Fixed_Rate <= 25',
+      error_message: 'Fixed rate outside reasonable bounds',
+      affected_fields: ['JFSA_024']
+    },
+    {
+      rule_id: 'JFSA_VR025',
+      name: 'Counterparty Classification Required',
+      description: 'Counterparty classification required for all transactions',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'Counterparty_Classification is not empty',
+      error_message: 'Counterparty classification is required',
+      affected_fields: ['JFSA_025']
+    },
+    {
+      rule_id: 'JFSA_VR026',
+      name: 'Clearing Status Valid',
+      description: 'Clearing status must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Clearing_Status IN [CLRD, NCLR]',
+      error_message: 'Invalid clearing status',
+      affected_fields: ['JFSA_014']
+    },
+    {
+      rule_id: 'JFSA_VR027',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['JFSA_005', 'JFSA_026']
+    },
+    {
+      rule_id: 'JFSA_VR028',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['JFSA_027', 'JFSA_028']
+    },
+    {
+      rule_id: 'JFSA_VR029',
+      name: 'Option Style Valid',
+      description: 'Option style must be valid for swaptions',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'IF Product_Type = SWAPTION THEN Option_Style IN [AMER, EURO, BERM]',
+      error_message: 'Invalid option style for swaption',
+      affected_fields: ['JFSA_029']
+    },
+    {
+      rule_id: 'JFSA_VR030',
+      name: 'Strike Price Required for Options',
+      description: 'Strike price required for option products',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Product_Type IN [SWAPTION, CAP, FLOOR] THEN Strike_Price is not empty',
+      error_message: 'Strike price required for option products',
+      affected_fields: ['JFSA_030']
+    },
+    {
+      rule_id: 'JFSA_VR031',
+      name: 'Barrier Details for Exotic',
+      description: 'Barrier level required for barrier options',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Exotic_Type = BARRIER THEN Barrier_Level is not empty',
+      error_message: 'Barrier level required for barrier options',
+      affected_fields: ['JFSA_031']
+    },
+    {
+      rule_id: 'JFSA_VR032',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['JFSA_003']
+    },
+    {
+      rule_id: 'JFSA_VR033',
+      name: 'Settlement Type Valid',
+      description: 'Settlement type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Settlement_Type IN [PHYS, CASH]',
+      error_message: 'Invalid settlement type',
+      affected_fields: ['JFSA_032']
+    },
+    {
+      rule_id: 'JFSA_VR034',
+      name: 'Master Agreement Type',
+      description: 'Master agreement type must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Master_Agreement IN [ISDA, OTHER]',
+      error_message: 'Invalid master agreement type',
+      affected_fields: ['JFSA_033']
+    },
+    {
+      rule_id: 'JFSA_VR035',
+      name: 'Collateral Portfolio Required',
+      description: 'Collateral portfolio code required when collateralized',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Collateralized = true THEN Collateral_Portfolio is not empty',
+      error_message: 'Collateral portfolio code required',
+      affected_fields: ['JFSA_034']
     }
   ]
 };
@@ -5040,7 +6394,7 @@ export const UK_EMIR_PACKAGE: RegulationPackage = {
   mandatory_fields: 130,
   conditional_fields: 55,
   optional_fields: 18,
-  validation_rule_count: 22,
+  validation_rule_count: 42,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:fca:emir:reporting',
   output_root_element: 'Document',
@@ -5339,6 +6693,386 @@ export const UK_EMIR_PACKAGE: RegulationPackage = {
       expression: 'IF MTM_Value is not empty THEN MTM_Currency is not empty',
       error_message: 'MTM currency required with MTM value',
       affected_fields: ['UKEMIR_019', 'UKEMIR_020']
+    },
+    {
+      rule_id: 'UKEMIR_VR005',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['UKEMIR_001', 'UKEMIR_002', 'UKEMIR_003', 'UKEMIR_017']
+    },
+    {
+      rule_id: 'UKEMIR_VR006',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['UKEMIR_004']
+    },
+    {
+      rule_id: 'UKEMIR_VR007',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['UKEMIR_005']
+    },
+    {
+      rule_id: 'UKEMIR_VR008',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['UKEMIR_012', 'UKEMIR_020']
+    },
+    {
+      rule_id: 'UKEMIR_VR009',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['UKEMIR_007']
+    },
+    {
+      rule_id: 'UKEMIR_VR010',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['UKEMIR_009', 'UKEMIR_010']
+    },
+    {
+      rule_id: 'UKEMIR_VR011',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['UKEMIR_011']
+    },
+    {
+      rule_id: 'UKEMIR_VR012',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid UK EMIR enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU, MARU]',
+      error_message: 'Invalid action type for UK EMIR reporting',
+      affected_fields: ['UKEMIR_006']
+    },
+    {
+      rule_id: 'UKEMIR_VR013',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and other counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Other_Counterparty_LEI',
+      error_message: 'Reporting and other counterparty LEIs must be different',
+      affected_fields: ['UKEMIR_002', 'UKEMIR_003']
+    },
+    {
+      rule_id: 'UKEMIR_VR014',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transactions must be reported within T+1 per UK EMIR',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day',
+      error_message: 'Transaction should be reported within T+1',
+      affected_fields: ['UKEMIR_007']
+    },
+    {
+      rule_id: 'UKEMIR_VR015',
+      name: 'ISIN Format Validation',
+      description: 'ISIN must be valid format per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'ISIN matches ^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
+      error_message: 'Invalid ISIN format',
+      affected_fields: ['UKEMIR_013']
+    },
+    {
+      rule_id: 'UKEMIR_VR016',
+      name: 'ISIN Checksum Validation',
+      description: 'ISIN must pass Luhn checksum',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'isin_luhn_valid(ISIN)',
+      error_message: 'Invalid ISIN checksum',
+      affected_fields: ['UKEMIR_013']
+    },
+    {
+      rule_id: 'UKEMIR_VR017',
+      name: 'CFI Code Format',
+      description: 'CFI code must be valid 6-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'CFI matches ^[A-Z]{6}$',
+      error_message: 'CFI must be 6 uppercase letters per ISO 10962',
+      affected_fields: ['UKEMIR_014']
+    },
+    {
+      rule_id: 'UKEMIR_VR018',
+      name: 'MIC Code Validation',
+      description: 'Execution venue must be valid ISO 10383 MIC',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'MIC IN iso_10383_mics',
+      error_message: 'Invalid MIC code',
+      affected_fields: ['UKEMIR_015']
+    },
+    {
+      rule_id: 'UKEMIR_VR019',
+      name: 'UK Counterparty Required',
+      description: 'At least one counterparty must be UK-based for UK EMIR scope',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = GB OR Other_Country = GB',
+      error_message: 'UK EMIR reporting may not apply if no UK counterparty',
+      affected_fields: ['UKEMIR_002', 'UKEMIR_003']
+    },
+    {
+      rule_id: 'UKEMIR_VR020',
+      name: 'Trade Repository LEI',
+      description: 'Trade repository must be FCA-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN fca_registered_trs',
+      error_message: 'Trade repository must be FCA-registered',
+      affected_fields: ['UKEMIR_018']
+    },
+    {
+      rule_id: 'UKEMIR_VR021',
+      name: 'Counterparty Classification Valid',
+      description: 'Counterparty must be classified as FC or NFC',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Classification IN [FC, NFC_PLUS, NFC_MINUS]',
+      error_message: 'Invalid counterparty classification',
+      affected_fields: ['UKEMIR_021']
+    },
+    {
+      rule_id: 'UKEMIR_VR022',
+      name: 'Clearing Obligation Assessment',
+      description: 'Clearing obligation status must be provided',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'Clearing_Obligation is not empty',
+      error_message: 'Clearing obligation status is required',
+      affected_fields: ['UKEMIR_022']
+    },
+    {
+      rule_id: 'UKEMIR_VR023',
+      name: 'Intragroup Flag Consistency',
+      description: 'Intragroup exemption details required when claimed',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Intragroup = true THEN Intragroup_Exemption_Type is not empty',
+      error_message: 'Intragroup exemption type required when intragroup is claimed',
+      affected_fields: ['UKEMIR_023']
+    },
+    {
+      rule_id: 'UKEMIR_VR024',
+      name: 'Collateral Portfolio Code',
+      description: 'Portfolio code required when collateralized',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Collateralized = true THEN Portfolio_Code is not empty',
+      error_message: 'Portfolio code required when collateralized',
+      affected_fields: ['UKEMIR_024']
+    },
+    {
+      rule_id: 'UKEMIR_VR025',
+      name: 'Initial Margin Posted',
+      description: 'Initial margin amount must be non-negative',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Initial_Margin_Posted >= 0',
+      error_message: 'Initial margin posted cannot be negative',
+      affected_fields: ['UKEMIR_025']
+    },
+    {
+      rule_id: 'UKEMIR_VR026',
+      name: 'Variation Margin Posted',
+      description: 'Variation margin amount must be non-negative',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Variation_Margin_Posted >= 0',
+      error_message: 'Variation margin posted cannot be negative',
+      affected_fields: ['UKEMIR_026']
+    },
+    {
+      rule_id: 'UKEMIR_VR027',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['UKEMIR_027']
+    },
+    {
+      rule_id: 'UKEMIR_VR028',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['UKEMIR_028']
+    },
+    {
+      rule_id: 'UKEMIR_VR029',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['UKEMIR_029']
+    },
+    {
+      rule_id: 'UKEMIR_VR030',
+      name: 'SONIA Transition',
+      description: 'GBP floating rates should reference SONIA post-LIBOR transition',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = GBP AND Rate_Type = FLOAT THEN Index LIKE SONIA',
+      error_message: 'GBP floating rate should reference SONIA',
+      affected_fields: ['UKEMIR_029']
+    },
+    {
+      rule_id: 'UKEMIR_VR031',
+      name: 'Spread Reasonable',
+      description: 'Spread over benchmark must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['UKEMIR_030']
+    },
+    {
+      rule_id: 'UKEMIR_VR032',
+      name: 'Fixed Rate Reasonable',
+      description: 'Fixed rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Fixed_Rate >= -5 AND Fixed_Rate <= 25',
+      error_message: 'Fixed rate outside reasonable bounds',
+      affected_fields: ['UKEMIR_031']
+    },
+    {
+      rule_id: 'UKEMIR_VR033',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['UKEMIR_006', 'UKEMIR_032']
+    },
+    {
+      rule_id: 'UKEMIR_VR034',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['UKEMIR_033', 'UKEMIR_034']
+    },
+    {
+      rule_id: 'UKEMIR_VR035',
+      name: 'Option Style Valid',
+      description: 'Option style must be valid for swaptions',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'IF Product_Type = SWAPTION THEN Option_Style IN [AMER, EURO, BERM]',
+      error_message: 'Invalid option style for swaption',
+      affected_fields: ['UKEMIR_035']
+    },
+    {
+      rule_id: 'UKEMIR_VR036',
+      name: 'Strike Price Required for Options',
+      description: 'Strike price required for option products',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Product_Type IN [SWAPTION, CAP, FLOOR] THEN Strike_Price is not empty',
+      error_message: 'Strike price required for option products',
+      affected_fields: ['UKEMIR_036']
+    },
+    {
+      rule_id: 'UKEMIR_VR037',
+      name: 'Option Expiry Before Maturity',
+      description: 'Option expiry must be before underlying maturity',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Product_Type = SWAPTION THEN Option_Expiry <= Maturity_Date',
+      error_message: 'Option expiry must be on or before underlying maturity',
+      affected_fields: ['UKEMIR_037', 'UKEMIR_010']
+    },
+    {
+      rule_id: 'UKEMIR_VR038',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['UKEMIR_004']
+    },
+    {
+      rule_id: 'UKEMIR_VR039',
+      name: 'Master Agreement Type',
+      description: 'Master agreement type must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Master_Agreement IN [ISDA, LMA, OTHER]',
+      error_message: 'Invalid master agreement type',
+      affected_fields: ['UKEMIR_038']
+    },
+    {
+      rule_id: 'UKEMIR_VR040',
+      name: 'Confirmation Method',
+      description: 'Confirmation method must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Confirmation_Method IN [ELEC, NONELEC]',
+      error_message: 'Invalid confirmation method',
+      affected_fields: ['UKEMIR_039']
+    },
+    {
+      rule_id: 'UKEMIR_VR041',
+      name: 'Trading Capacity Valid',
+      description: 'Trading capacity must be principal or agent',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Trading_Capacity IN [PRIN, AGEN]',
+      error_message: 'Invalid trading capacity',
+      affected_fields: ['UKEMIR_040']
+    },
+    {
+      rule_id: 'UKEMIR_VR042',
+      name: 'Position Report Daily',
+      description: 'Position reports required daily for open positions',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Position_Report_Date = Previous_Business_Day',
+      error_message: 'Position report should be for previous business day',
+      affected_fields: ['UKEMIR_041']
     }
   ]
 };
@@ -5359,7 +7093,7 @@ export const ASIC_PACKAGE: RegulationPackage = {
   mandatory_fields: 75,
   conditional_fields: 28,
   optional_fields: 7,
-  validation_rule_count: 15,
+  validation_rule_count: 30,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:asic:derivatives:reporting',
   output_root_element: 'DerivativesReport',
@@ -5552,6 +7286,286 @@ export const ASIC_PACKAGE: RegulationPackage = {
       expression: 'UPI is not empty',
       error_message: 'UPI is required',
       affected_fields: ['ASIC_004']
+    },
+    {
+      rule_id: 'ASIC_VR003',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['ASIC_001', 'ASIC_002', 'ASIC_013']
+    },
+    {
+      rule_id: 'ASIC_VR004',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['ASIC_003']
+    },
+    {
+      rule_id: 'ASIC_VR005',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['ASIC_004']
+    },
+    {
+      rule_id: 'ASIC_VR006',
+      name: 'CCP for Cleared',
+      description: 'CCP LEI required for cleared transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = true THEN CCP_LEI is not empty',
+      error_message: 'CCP LEI required when cleared',
+      affected_fields: ['ASIC_012', 'ASIC_013']
+    },
+    {
+      rule_id: 'ASIC_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['ASIC_009', 'ASIC_014']
+    },
+    {
+      rule_id: 'ASIC_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future (AEST)',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime_aest',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['ASIC_006']
+    },
+    {
+      rule_id: 'ASIC_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['ASIC_007', 'ASIC_008']
+    },
+    {
+      rule_id: 'ASIC_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['ASIC_010']
+    },
+    {
+      rule_id: 'ASIC_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid ASIC enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU]',
+      error_message: 'Invalid action type for ASIC reporting',
+      affected_fields: ['ASIC_005']
+    },
+    {
+      rule_id: 'ASIC_VR012',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['ASIC_001', 'ASIC_002']
+    },
+    {
+      rule_id: 'ASIC_VR013',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transactions must be reported within T+1 per ASIC rules',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day AEST',
+      error_message: 'Transaction should be reported within T+1',
+      affected_fields: ['ASIC_006']
+    },
+    {
+      rule_id: 'ASIC_VR014',
+      name: 'Australian Nexus Required',
+      description: 'At least one party must have Australian nexus',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = AU OR Counterparty_Country = AU',
+      error_message: 'ASIC reporting may not apply without Australian nexus',
+      affected_fields: ['ASIC_001', 'ASIC_002']
+    },
+    {
+      rule_id: 'ASIC_VR015',
+      name: 'ISIN Format Validation',
+      description: 'ISIN must be valid format per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'ISIN matches ^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
+      error_message: 'Invalid ISIN format',
+      affected_fields: ['ASIC_015']
+    },
+    {
+      rule_id: 'ASIC_VR016',
+      name: 'Valuation Amount Required',
+      description: 'Valuation must be provided for open positions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Position_Open = true THEN Valuation_Amount is not empty',
+      error_message: 'Valuation required for open positions',
+      affected_fields: ['ASIC_016']
+    },
+    {
+      rule_id: 'ASIC_VR017',
+      name: 'Counterparty Classification',
+      description: 'Counterparty must be classified per ASIC rules',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Classification IN [AFSL, EXEMPT, OTHER]',
+      error_message: 'Invalid counterparty classification',
+      affected_fields: ['ASIC_017']
+    },
+    {
+      rule_id: 'ASIC_VR018',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['ASIC_018']
+    },
+    {
+      rule_id: 'ASIC_VR019',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['ASIC_019']
+    },
+    {
+      rule_id: 'ASIC_VR020',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['ASIC_020']
+    },
+    {
+      rule_id: 'ASIC_VR021',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['ASIC_021']
+    },
+    {
+      rule_id: 'ASIC_VR022',
+      name: 'BBSW Reference for AUD',
+      description: 'AUD floating rates should reference BBSW or AONIA',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = AUD AND Rate_Type = FLOAT THEN Index LIKE BBSW OR AONIA',
+      error_message: 'AUD floating rate should reference BBSW or AONIA',
+      affected_fields: ['ASIC_021']
+    },
+    {
+      rule_id: 'ASIC_VR023',
+      name: 'Spread Reasonable',
+      description: 'Spread must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['ASIC_022']
+    },
+    {
+      rule_id: 'ASIC_VR024',
+      name: 'Fixed Rate Reasonable',
+      description: 'Fixed rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Fixed_Rate >= -5 AND Fixed_Rate <= 25',
+      error_message: 'Fixed rate outside reasonable bounds',
+      affected_fields: ['ASIC_023']
+    },
+    {
+      rule_id: 'ASIC_VR025',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['ASIC_005', 'ASIC_024']
+    },
+    {
+      rule_id: 'ASIC_VR026',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['ASIC_025', 'ASIC_026']
+    },
+    {
+      rule_id: 'ASIC_VR027',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['ASIC_003']
+    },
+    {
+      rule_id: 'ASIC_VR028',
+      name: 'Settlement Type Valid',
+      description: 'Settlement type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Settlement_Type IN [PHYS, CASH]',
+      error_message: 'Invalid settlement type',
+      affected_fields: ['ASIC_027']
+    },
+    {
+      rule_id: 'ASIC_VR029',
+      name: 'Collateral Required for Non-Cleared',
+      description: 'Collateral info required for non-centrally cleared',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = false THEN Collateralized is not empty',
+      error_message: 'Collateral status required for non-cleared trades',
+      affected_fields: ['ASIC_012', 'ASIC_028']
+    },
+    {
+      rule_id: 'ASIC_VR030',
+      name: 'Trade Repository LEI',
+      description: 'Trade repository must be ASIC-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN asic_registered_trs',
+      error_message: 'Trade repository must be ASIC-registered',
+      affected_fields: ['ASIC_029']
     }
   ]
 };
@@ -5572,7 +7586,7 @@ export const MAS_PACKAGE: RegulationPackage = {
   mandatory_fields: 72,
   conditional_fields: 25,
   optional_fields: 8,
-  validation_rule_count: 14,
+  validation_rule_count: 28,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:mas:derivatives:reporting',
   output_root_element: 'DerivativesReport',
@@ -5752,6 +7766,266 @@ export const MAS_PACKAGE: RegulationPackage = {
       expression: 'UPI is not empty',
       error_message: 'UPI is required',
       affected_fields: ['MAS_004']
+    },
+    {
+      rule_id: 'MAS_VR003',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['MAS_001', 'MAS_002']
+    },
+    {
+      rule_id: 'MAS_VR004',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['MAS_003']
+    },
+    {
+      rule_id: 'MAS_VR005',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['MAS_004']
+    },
+    {
+      rule_id: 'MAS_VR006',
+      name: 'CCP for Cleared',
+      description: 'CCP LEI required for cleared transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = true THEN CCP_LEI is not empty',
+      error_message: 'CCP LEI required when cleared',
+      affected_fields: ['MAS_012', 'MAS_013']
+    },
+    {
+      rule_id: 'MAS_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['MAS_009', 'MAS_014']
+    },
+    {
+      rule_id: 'MAS_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future (SGT)',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime_sgt',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['MAS_006']
+    },
+    {
+      rule_id: 'MAS_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['MAS_007', 'MAS_008']
+    },
+    {
+      rule_id: 'MAS_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['MAS_010']
+    },
+    {
+      rule_id: 'MAS_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid MAS enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU]',
+      error_message: 'Invalid action type for MAS reporting',
+      affected_fields: ['MAS_005']
+    },
+    {
+      rule_id: 'MAS_VR012',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['MAS_001', 'MAS_002']
+    },
+    {
+      rule_id: 'MAS_VR013',
+      name: 'T+2 Reporting Deadline',
+      description: 'Transactions must be reported within T+2 per MAS rules',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 2 business days SGT',
+      error_message: 'Transaction should be reported within T+2',
+      affected_fields: ['MAS_006']
+    },
+    {
+      rule_id: 'MAS_VR014',
+      name: 'Singapore Nexus Required',
+      description: 'At least one party must have Singapore nexus',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = SG OR Counterparty_Country = SG',
+      error_message: 'MAS reporting may not apply without Singapore nexus',
+      affected_fields: ['MAS_001', 'MAS_002']
+    },
+    {
+      rule_id: 'MAS_VR015',
+      name: 'ISIN Format Validation',
+      description: 'ISIN must be valid format per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'ISIN matches ^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
+      error_message: 'Invalid ISIN format',
+      affected_fields: ['MAS_015']
+    },
+    {
+      rule_id: 'MAS_VR016',
+      name: 'Counterparty Classification',
+      description: 'Counterparty must be classified per MAS rules',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Classification IN [FI, NFI, EXEMPT]',
+      error_message: 'Invalid counterparty classification',
+      affected_fields: ['MAS_016']
+    },
+    {
+      rule_id: 'MAS_VR017',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['MAS_017']
+    },
+    {
+      rule_id: 'MAS_VR018',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['MAS_018']
+    },
+    {
+      rule_id: 'MAS_VR019',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['MAS_019']
+    },
+    {
+      rule_id: 'MAS_VR020',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['MAS_020']
+    },
+    {
+      rule_id: 'MAS_VR021',
+      name: 'SORA Reference for SGD',
+      description: 'SGD floating rates should reference SORA',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = SGD AND Rate_Type = FLOAT THEN Index LIKE SORA',
+      error_message: 'SGD floating rate should reference SORA',
+      affected_fields: ['MAS_020']
+    },
+    {
+      rule_id: 'MAS_VR022',
+      name: 'Spread Reasonable',
+      description: 'Spread must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['MAS_021']
+    },
+    {
+      rule_id: 'MAS_VR023',
+      name: 'Fixed Rate Reasonable',
+      description: 'Fixed rate must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Fixed_Rate >= -5 AND Fixed_Rate <= 25',
+      error_message: 'Fixed rate outside reasonable bounds',
+      affected_fields: ['MAS_022']
+    },
+    {
+      rule_id: 'MAS_VR024',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['MAS_005', 'MAS_023']
+    },
+    {
+      rule_id: 'MAS_VR025',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['MAS_024', 'MAS_025']
+    },
+    {
+      rule_id: 'MAS_VR026',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['MAS_003']
+    },
+    {
+      rule_id: 'MAS_VR027',
+      name: 'Settlement Type Valid',
+      description: 'Settlement type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Settlement_Type IN [PHYS, CASH]',
+      error_message: 'Invalid settlement type',
+      affected_fields: ['MAS_026']
+    },
+    {
+      rule_id: 'MAS_VR028',
+      name: 'Trade Repository Registered',
+      description: 'Trade repository must be MAS-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN mas_registered_trs',
+      error_message: 'Trade repository must be MAS-registered',
+      affected_fields: ['MAS_027']
     }
   ]
 };
@@ -5772,7 +8046,7 @@ export const HKMA_PACKAGE: RegulationPackage = {
   mandatory_fields: 68,
   conditional_fields: 24,
   optional_fields: 8,
-  validation_rule_count: 12,
+  validation_rule_count: 25,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:hkma:derivatives:reporting',
   output_root_element: 'DerivativesReport',
@@ -5921,6 +8195,246 @@ export const HKMA_PACKAGE: RegulationPackage = {
       expression: 'LEI matches ^[A-Z0-9]{20}$',
       error_message: 'Invalid LEI format',
       affected_fields: ['HKMA_001', 'HKMA_002']
+    },
+    {
+      rule_id: 'HKMA_VR002',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['HKMA_001', 'HKMA_002']
+    },
+    {
+      rule_id: 'HKMA_VR003',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['HKMA_003']
+    },
+    {
+      rule_id: 'HKMA_VR004',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['HKMA_004']
+    },
+    {
+      rule_id: 'HKMA_VR005',
+      name: 'UPI Required',
+      description: 'UPI is mandatory',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'UPI is not empty',
+      error_message: 'UPI is required',
+      affected_fields: ['HKMA_004']
+    },
+    {
+      rule_id: 'HKMA_VR006',
+      name: 'CCP for Cleared',
+      description: 'CCP LEI required for cleared transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = true THEN CCP_LEI is not empty',
+      error_message: 'CCP LEI required when cleared',
+      affected_fields: ['HKMA_012', 'HKMA_013']
+    },
+    {
+      rule_id: 'HKMA_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['HKMA_009', 'HKMA_014']
+    },
+    {
+      rule_id: 'HKMA_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future (HKT)',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime_hkt',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['HKMA_006']
+    },
+    {
+      rule_id: 'HKMA_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['HKMA_007', 'HKMA_008']
+    },
+    {
+      rule_id: 'HKMA_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['HKMA_010']
+    },
+    {
+      rule_id: 'HKMA_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid HKMA enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU]',
+      error_message: 'Invalid action type for HKMA reporting',
+      affected_fields: ['HKMA_005']
+    },
+    {
+      rule_id: 'HKMA_VR012',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['HKMA_001', 'HKMA_002']
+    },
+    {
+      rule_id: 'HKMA_VR013',
+      name: 'T+2 Reporting Deadline',
+      description: 'Transactions must be reported within T+2 per HKMA rules',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 2 business days HKT',
+      error_message: 'Transaction should be reported within T+2',
+      affected_fields: ['HKMA_006']
+    },
+    {
+      rule_id: 'HKMA_VR014',
+      name: 'Hong Kong Nexus Required',
+      description: 'At least one party must have Hong Kong nexus',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = HK OR Counterparty_Country = HK',
+      error_message: 'HKMA reporting may not apply without Hong Kong nexus',
+      affected_fields: ['HKMA_001', 'HKMA_002']
+    },
+    {
+      rule_id: 'HKMA_VR015',
+      name: 'ISIN Format Validation',
+      description: 'ISIN must be valid format per ISO 6166',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'ISIN matches ^[A-Z]{2}[A-Z0-9]{9}[0-9]$',
+      error_message: 'Invalid ISIN format',
+      affected_fields: ['HKMA_015']
+    },
+    {
+      rule_id: 'HKMA_VR016',
+      name: 'Counterparty Classification',
+      description: 'Counterparty must be classified per HKMA rules',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Classification IN [AI, PI, OTHER]',
+      error_message: 'Invalid counterparty classification',
+      affected_fields: ['HKMA_016']
+    },
+    {
+      rule_id: 'HKMA_VR017',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['HKMA_017']
+    },
+    {
+      rule_id: 'HKMA_VR018',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['HKMA_018']
+    },
+    {
+      rule_id: 'HKMA_VR019',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['HKMA_019']
+    },
+    {
+      rule_id: 'HKMA_VR020',
+      name: 'HIBOR Reference for HKD',
+      description: 'HKD floating rates should reference HIBOR or HONIA',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = HKD AND Rate_Type = FLOAT THEN Index LIKE HIBOR OR HONIA',
+      error_message: 'HKD floating rate should reference HIBOR or HONIA',
+      affected_fields: ['HKMA_019']
+    },
+    {
+      rule_id: 'HKMA_VR021',
+      name: 'Spread Reasonable',
+      description: 'Spread must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['HKMA_020']
+    },
+    {
+      rule_id: 'HKMA_VR022',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['HKMA_005', 'HKMA_021']
+    },
+    {
+      rule_id: 'HKMA_VR023',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['HKMA_022', 'HKMA_023']
+    },
+    {
+      rule_id: 'HKMA_VR024',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['HKMA_003']
+    },
+    {
+      rule_id: 'HKMA_VR025',
+      name: 'Trade Repository Registered',
+      description: 'Trade repository must be HKMA-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN hkma_registered_trs',
+      error_message: 'Trade repository must be HKMA-registered',
+      affected_fields: ['HKMA_024']
     }
   ]
 };
@@ -5941,7 +8455,7 @@ export const CANADA_PACKAGE: RegulationPackage = {
   mandatory_fields: 62,
   conditional_fields: 25,
   optional_fields: 8,
-  validation_rule_count: 12,
+  validation_rule_count: 25,
   output_format: 'DTCC Harmonized XML',
   output_namespace: 'urn:csa:derivatives:reporting',
   output_root_element: 'DerivativesReport',
@@ -6090,6 +8604,246 @@ export const CANADA_PACKAGE: RegulationPackage = {
       expression: 'LEI matches ^[A-Z0-9]{20}$',
       error_message: 'Invalid LEI format',
       affected_fields: ['CA_001', 'CA_002']
+    },
+    {
+      rule_id: 'CA_VR002',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['CA_001', 'CA_002']
+    },
+    {
+      rule_id: 'CA_VR003',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['CA_003']
+    },
+    {
+      rule_id: 'CA_VR004',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['CA_004']
+    },
+    {
+      rule_id: 'CA_VR005',
+      name: 'UPI Required',
+      description: 'UPI is mandatory',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'UPI is not empty',
+      error_message: 'UPI is required',
+      affected_fields: ['CA_004']
+    },
+    {
+      rule_id: 'CA_VR006',
+      name: 'CCP for Cleared',
+      description: 'CCP LEI required for cleared transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = true THEN CCP_LEI is not empty',
+      error_message: 'CCP LEI required when cleared',
+      affected_fields: ['CA_011', 'CA_012']
+    },
+    {
+      rule_id: 'CA_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['CA_010']
+    },
+    {
+      rule_id: 'CA_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['CA_006']
+    },
+    {
+      rule_id: 'CA_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['CA_007', 'CA_008']
+    },
+    {
+      rule_id: 'CA_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['CA_009']
+    },
+    {
+      rule_id: 'CA_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid CSA enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU]',
+      error_message: 'Invalid action type for CSA reporting',
+      affected_fields: ['CA_005']
+    },
+    {
+      rule_id: 'CA_VR012',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['CA_001', 'CA_002']
+    },
+    {
+      rule_id: 'CA_VR013',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transactions must be reported within T+1 per CSA rules',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day',
+      error_message: 'Transaction should be reported within T+1',
+      affected_fields: ['CA_006']
+    },
+    {
+      rule_id: 'CA_VR014',
+      name: 'Canadian Nexus Required',
+      description: 'At least one party must have Canadian nexus',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = CA OR Counterparty_Country = CA',
+      error_message: 'CSA reporting may not apply without Canadian nexus',
+      affected_fields: ['CA_001', 'CA_002']
+    },
+    {
+      rule_id: 'CA_VR015',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['CA_013']
+    },
+    {
+      rule_id: 'CA_VR016',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['CA_014']
+    },
+    {
+      rule_id: 'CA_VR017',
+      name: 'Payment Frequency Valid',
+      description: 'Payment frequency must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Payment_Frequency IN [DAIL, WEEK, MNTH, QURT, SEMI, YEAR, TERM]',
+      error_message: 'Invalid payment frequency',
+      affected_fields: ['CA_015']
+    },
+    {
+      rule_id: 'CA_VR018',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['CA_016']
+    },
+    {
+      rule_id: 'CA_VR019',
+      name: 'CORRA Reference for CAD',
+      description: 'CAD floating rates should reference CORRA',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = CAD AND Rate_Type = FLOAT THEN Index LIKE CORRA',
+      error_message: 'CAD floating rate should reference CORRA',
+      affected_fields: ['CA_016']
+    },
+    {
+      rule_id: 'CA_VR020',
+      name: 'Spread Reasonable',
+      description: 'Spread must be within reasonable bounds',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Spread >= -500 AND Spread <= 1000 basis points',
+      error_message: 'Spread outside reasonable bounds',
+      affected_fields: ['CA_017']
+    },
+    {
+      rule_id: 'CA_VR021',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['CA_005', 'CA_018']
+    },
+    {
+      rule_id: 'CA_VR022',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['CA_019', 'CA_020']
+    },
+    {
+      rule_id: 'CA_VR023',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['CA_003']
+    },
+    {
+      rule_id: 'CA_VR024',
+      name: 'Settlement Type Valid',
+      description: 'Settlement type must be valid enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Settlement_Type IN [PHYS, CASH]',
+      error_message: 'Invalid settlement type',
+      affected_fields: ['CA_021']
+    },
+    {
+      rule_id: 'CA_VR025',
+      name: 'Trade Repository Registered',
+      description: 'Trade repository must be CSA-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN csa_registered_trs',
+      error_message: 'Trade repository must be CSA-registered',
+      affected_fields: ['CA_022']
     }
   ]
 };
@@ -6110,7 +8864,7 @@ export const SWISS_FMIA_PACKAGE: RegulationPackage = {
   mandatory_fields: 60,
   conditional_fields: 22,
   optional_fields: 8,
-  validation_rule_count: 10,
+  validation_rule_count: 22,
   output_format: 'ISO 20022 XML',
   output_namespace: 'urn:finma:fmia:reporting',
   output_root_element: 'DerivativesReport',
@@ -6259,6 +9013,216 @@ export const SWISS_FMIA_PACKAGE: RegulationPackage = {
       expression: 'LEI matches ^[A-Z0-9]{20}$',
       error_message: 'Invalid LEI format',
       affected_fields: ['FMIA_001', 'FMIA_002']
+    },
+    {
+      rule_id: 'FMIA_VR002',
+      name: 'LEI Checksum Validation',
+      description: 'LEI must pass MOD 97-10 checksum per ISO 17442',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'lei_checksum_valid(LEI)',
+      error_message: 'LEI checksum validation failed',
+      affected_fields: ['FMIA_001', 'FMIA_002']
+    },
+    {
+      rule_id: 'FMIA_VR003',
+      name: 'UTI Format Validation',
+      description: 'UTI must be valid format per ISO 23897',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UTI matches ^[A-Z0-9]{20}[A-Za-z0-9]{1,32}$',
+      error_message: 'Invalid UTI format',
+      affected_fields: ['FMIA_003']
+    },
+    {
+      rule_id: 'FMIA_VR004',
+      name: 'UPI Format Validation',
+      description: 'UPI must be valid 12-character format',
+      severity: 'ERROR',
+      rule_type: 'format',
+      expression: 'UPI matches ^[A-Z0-9]{12}$',
+      error_message: 'Invalid UPI format',
+      affected_fields: ['FMIA_004']
+    },
+    {
+      rule_id: 'FMIA_VR005',
+      name: 'UPI Required',
+      description: 'UPI is mandatory',
+      severity: 'ERROR',
+      rule_type: 'required',
+      expression: 'UPI is not empty',
+      error_message: 'UPI is required',
+      affected_fields: ['FMIA_004']
+    },
+    {
+      rule_id: 'FMIA_VR006',
+      name: 'CCP for Cleared',
+      description: 'CCP LEI required for cleared transactions',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Cleared = true THEN CCP_LEI is not empty',
+      error_message: 'CCP LEI required when cleared',
+      affected_fields: ['FMIA_011', 'FMIA_012']
+    },
+    {
+      rule_id: 'FMIA_VR007',
+      name: 'ISO Currency Code',
+      description: 'Currency must be valid ISO 4217 code',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'Currency IN iso_4217_codes',
+      error_message: 'Invalid ISO 4217 currency code',
+      affected_fields: ['FMIA_010']
+    },
+    {
+      rule_id: 'FMIA_VR008',
+      name: 'Execution Date Not Future',
+      description: 'Execution timestamp cannot be in the future (CET)',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Execution_Timestamp <= current_datetime_cet',
+      error_message: 'Execution timestamp cannot be in the future',
+      affected_fields: ['FMIA_006']
+    },
+    {
+      rule_id: 'FMIA_VR009',
+      name: 'Maturity After Effective',
+      description: 'Maturity date must be after effective date',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Maturity_Date > Effective_Date',
+      error_message: 'Maturity date must be after effective date',
+      affected_fields: ['FMIA_007', 'FMIA_008']
+    },
+    {
+      rule_id: 'FMIA_VR010',
+      name: 'Notional Amount Positive',
+      description: 'Notional amount must be positive',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'Notional_Amount > 0',
+      error_message: 'Notional amount must be positive',
+      affected_fields: ['FMIA_009']
+    },
+    {
+      rule_id: 'FMIA_VR011',
+      name: 'Action Type Valid',
+      description: 'Action type must be valid FINMA enumeration',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Action_Type IN [NEWT, MODI, CORR, TERM, EROR, REVI, POSC, VALU]',
+      error_message: 'Invalid action type for FINMA reporting',
+      affected_fields: ['FMIA_005']
+    },
+    {
+      rule_id: 'FMIA_VR012',
+      name: 'Counterparty LEIs Different',
+      description: 'Reporting and counterparty LEIs must be different',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'Reporting_LEI != Counterparty_LEI',
+      error_message: 'Reporting and counterparty LEIs must be different',
+      affected_fields: ['FMIA_001', 'FMIA_002']
+    },
+    {
+      rule_id: 'FMIA_VR013',
+      name: 'T+1 Reporting Deadline',
+      description: 'Transactions must be reported within T+1 per FMIA rules',
+      severity: 'WARNING',
+      rule_type: 'business',
+      expression: 'Reporting_Timestamp <= Execution_Timestamp + 1 business day CET',
+      error_message: 'Transaction should be reported within T+1',
+      affected_fields: ['FMIA_006']
+    },
+    {
+      rule_id: 'FMIA_VR014',
+      name: 'Swiss Nexus Required',
+      description: 'At least one party must have Swiss nexus',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'Reporting_Country = CH OR Counterparty_Country = CH',
+      error_message: 'FMIA reporting may not apply without Swiss nexus',
+      affected_fields: ['FMIA_001', 'FMIA_002']
+    },
+    {
+      rule_id: 'FMIA_VR015',
+      name: 'Product Classification Valid',
+      description: 'Product classification must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Product_Class IN [IR, CR, EQ, FX, CO]',
+      error_message: 'Invalid product classification',
+      affected_fields: ['FMIA_013']
+    },
+    {
+      rule_id: 'FMIA_VR016',
+      name: 'Day Count Convention Valid',
+      description: 'Day count convention must be valid',
+      severity: 'ERROR',
+      rule_type: 'enum',
+      expression: 'Day_Count IN [A360, A365, A365F, 30360, 30E360, ACT/ACT]',
+      error_message: 'Invalid day count convention',
+      affected_fields: ['FMIA_014']
+    },
+    {
+      rule_id: 'FMIA_VR017',
+      name: 'Floating Rate Index Required',
+      description: 'Floating rate index required for floating rate legs',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Rate_Type = FLOAT THEN Floating_Rate_Index is not empty',
+      error_message: 'Floating rate index required for floating rate leg',
+      affected_fields: ['FMIA_015']
+    },
+    {
+      rule_id: 'FMIA_VR018',
+      name: 'SARON Reference for CHF',
+      description: 'CHF floating rates should reference SARON',
+      severity: 'WARNING',
+      rule_type: 'cross_field',
+      expression: 'IF Currency = CHF AND Rate_Type = FLOAT THEN Index LIKE SARON',
+      error_message: 'CHF floating rate should reference SARON',
+      affected_fields: ['FMIA_015']
+    },
+    {
+      rule_id: 'FMIA_VR019',
+      name: 'Compression Indicator',
+      description: 'Original UTI required for compression trades',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Action_Type = COMP THEN Original_UTI is not empty',
+      error_message: 'Original UTI required for compression trades',
+      affected_fields: ['FMIA_005', 'FMIA_016']
+    },
+    {
+      rule_id: 'FMIA_VR020',
+      name: 'Novation LEIs Required',
+      description: 'Transferor and transferee LEIs required for novations',
+      severity: 'ERROR',
+      rule_type: 'cross_field',
+      expression: 'IF Event_Type = NOVA THEN Transferor_LEI AND Transferee_LEI are not empty',
+      error_message: 'Transferor and transferee LEIs required for novations',
+      affected_fields: ['FMIA_017', 'FMIA_018']
+    },
+    {
+      rule_id: 'FMIA_VR021',
+      name: 'Unique UTI Within Entity',
+      description: 'UTI must be unique within reporting entity scope',
+      severity: 'ERROR',
+      rule_type: 'business',
+      expression: 'UTI is unique per Reporting_Entity',
+      error_message: 'Duplicate UTI detected for reporting entity',
+      affected_fields: ['FMIA_003']
+    },
+    {
+      rule_id: 'FMIA_VR022',
+      name: 'Trade Repository Registered',
+      description: 'Trade repository must be FINMA-registered',
+      severity: 'ERROR',
+      rule_type: 'referential',
+      expression: 'TR_LEI IN finma_registered_trs',
+      error_message: 'Trade repository must be FINMA-registered',
+      affected_fields: ['FMIA_019']
     }
   ]
 };

@@ -109,11 +109,301 @@
         "documentation": "Contract type"
       }
     ],
-    "recommended_validations": [
-      "lei_format",
-      "uti_format",
-      "date_sequence",
-      "notional_positive"
+    "validation_rules": [
+      {
+        "rule_id": "EMIR-VR001",
+        "name": "Reporting CP LEI Format",
+        "expression": "df['reporting_counterparty_lei'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for reporting counterparty. Must be 20 alphanumeric characters."
+      },
+      {
+        "rule_id": "EMIR-VR002",
+        "name": "Reporting CP LEI Checksum",
+        "expression": "df['reporting_counterparty_lei'].apply(lei_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "Reporting counterparty LEI checksum validation failed."
+      },
+      {
+        "rule_id": "EMIR-VR003",
+        "name": "Other CP LEI Format",
+        "expression": "df['other_counterparty_lei'].str.match(r'^[A-Z0-9]{20}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid LEI format for other counterparty."
+      },
+      {
+        "rule_id": "EMIR-VR004",
+        "name": "Other CP LEI Checksum",
+        "expression": "df['other_counterparty_lei'].apply(lei_checksum_valid)",
+        "severity": "BLOCKING",
+        "error_message": "Other counterparty LEI checksum validation failed."
+      },
+      {
+        "rule_id": "EMIR-VR005",
+        "name": "UTI Format",
+        "expression": "df['uti'].str.match(r'^[A-Za-z0-9]{1,52}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid UTI format. Must be 1-52 alphanumeric characters."
+      },
+      {
+        "rule_id": "EMIR-VR006",
+        "name": "UTI Prefix LEI",
+        "expression": "(df['uti'].str.len() < 20) | df['uti'].str[:20].str.match(r'^[A-Z0-9]{20}$', na=True)",
+        "severity": "WARNING",
+        "error_message": "UTI prefix should be a valid LEI per ISO 23897."
+      },
+      {
+        "rule_id": "EMIR-VR007",
+        "name": "Counterparties Different",
+        "expression": "df['reporting_counterparty_lei'] != df['other_counterparty_lei']",
+        "severity": "BLOCKING",
+        "error_message": "Reporting and other counterparty cannot be the same."
+      },
+      {
+        "rule_id": "EMIR-VR008",
+        "name": "Trade Date Format",
+        "expression": "df['trade_date'].str.match(r'^\\d{4}-\\d{2}-\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid trade date format. Must be YYYY-MM-DD."
+      },
+      {
+        "rule_id": "EMIR-VR009",
+        "name": "Effective Date Format",
+        "expression": "df['effective_date'].str.match(r'^\\d{4}-\\d{2}-\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid effective date format."
+      },
+      {
+        "rule_id": "EMIR-VR010",
+        "name": "Maturity Date Format",
+        "expression": "df['maturity_date'].str.match(r'^\\d{4}-\\d{2}-\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid maturity date format."
+      },
+      {
+        "rule_id": "EMIR-VR011",
+        "name": "Effective Before Maturity",
+        "expression": "df['effective_date'] <= df['maturity_date']",
+        "severity": "BLOCKING",
+        "error_message": "Effective date cannot be after maturity date."
+      },
+      {
+        "rule_id": "EMIR-VR012",
+        "name": "Trade Date Before Effective",
+        "expression": "df['trade_date'] <= df['effective_date']",
+        "severity": "WARNING",
+        "error_message": "Trade date should typically be on or before effective date."
+      },
+      {
+        "rule_id": "EMIR-VR013",
+        "name": "Positive Notional",
+        "expression": "pd.to_numeric(df['notional_amount'], errors='coerce') > 0",
+        "severity": "BLOCKING",
+        "error_message": "Notional amount must be positive."
+      },
+      {
+        "rule_id": "EMIR-VR014",
+        "name": "Notional Currency Format",
+        "expression": "df['notional_currency'].str.match(r'^[A-Z]{3}$', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid notional currency format."
+      },
+      {
+        "rule_id": "EMIR-VR015",
+        "name": "Valid Notional Currency",
+        "expression": "df['notional_currency'].isin(ISO_4217_CURRENCIES)",
+        "severity": "BLOCKING",
+        "error_message": "Notional currency not in ISO 4217."
+      },
+      {
+        "rule_id": "EMIR-VR016",
+        "name": "Valid Asset Class",
+        "expression": "df['asset_class'].isin(['INTR', 'CRDT', 'EQUI', 'COMM', 'CURR'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid asset class. Must be INTR, CRDT, EQUI, COMM, or CURR."
+      },
+      {
+        "rule_id": "EMIR-VR017",
+        "name": "Valid Contract Type",
+        "expression": "df['contract_type'].isin(['CFDS', 'FORW', 'FRAS', 'FUTR', 'OPTN', 'OTHR', 'SPDB', 'SWAP', 'SWPT'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid contract type."
+      },
+      {
+        "rule_id": "EMIR-VR018",
+        "name": "Valid Action Type",
+        "expression": "df['action_type'].isin(['NEWT', 'MODI', 'CORR', 'TERM', 'EROR', 'REVI', 'VALU', 'POSC', 'MARU'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid action type."
+      },
+      {
+        "rule_id": "EMIR-VR019",
+        "name": "Valid Event Type",
+        "expression": "df['event_type'].isna() | df['event_type'].isin(['TRAD', 'NOVA', 'COMP', 'ETRM', 'CLRG', 'EXER', 'ALOC', 'CREV', 'UPDT', 'PTNG', 'INCP', 'PTTP'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid event type."
+      },
+      {
+        "rule_id": "EMIR-VR020",
+        "name": "CCP Required if Cleared",
+        "expression": "(df['cleared'] != 'Y') | (df['ccp_lei'].notna() & df['ccp_lei'].str.match(r'^[A-Z0-9]{20}$', na=False))",
+        "severity": "BLOCKING",
+        "error_message": "CCP LEI required when contract is cleared."
+      },
+      {
+        "rule_id": "EMIR-VR021",
+        "name": "Valid Cleared Status",
+        "expression": "df['cleared'].isin(['Y', 'N', 'I'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid cleared status. Must be Y, N, or I."
+      },
+      {
+        "rule_id": "EMIR-VR022",
+        "name": "Prior UTI for Lifecycle Events",
+        "expression": "(df['action_type'].isin(['NEWT', 'VALU', 'MARU'])) | (df['prior_uti'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Prior UTI required for MODI, CORR, TERM actions."
+      },
+      {
+        "rule_id": "EMIR-VR023",
+        "name": "Valid Nature of CP",
+        "expression": "df['nature_of_reporting_cp'].isin(['F', 'N'])",
+        "severity": "BLOCKING",
+        "error_message": "Nature of counterparty must be F or N."
+      },
+      {
+        "rule_id": "EMIR-VR024",
+        "name": "Sector Required for Financial CP",
+        "expression": "(df['nature_of_reporting_cp'] != 'F') | (df['sector_of_reporting_cp'].notna())",
+        "severity": "BLOCKING",
+        "error_message": "Sector required for financial counterparties."
+      },
+      {
+        "rule_id": "EMIR-VR025",
+        "name": "Valid Sector Code",
+        "expression": "df['sector_of_reporting_cp'].isna() | df['sector_of_reporting_cp'].isin(['AIFD', 'CDTI', 'INUN', 'ORPI', 'INVF', 'UCIT', 'ASSU', 'REIN', 'CSDS', 'CCPS'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid sector code."
+      },
+      {
+        "rule_id": "EMIR-VR026",
+        "name": "Valid Collateralisation",
+        "expression": "df['collateralisation'].isna() | df['collateralisation'].isin(['UNCL', 'PRC1', 'PRC2', 'PRCL', 'OWC1', 'OWC2', 'OWP1', 'OWP2', 'FLCL'])",
+        "severity": "BLOCKING",
+        "error_message": "Invalid collateralisation type."
+      },
+      {
+        "rule_id": "EMIR-VR027",
+        "name": "MIC Format",
+        "expression": "df['trading_venue'].isna() | df['trading_venue'].str.match(r'^[A-Z]{4}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid MIC format for trading venue."
+      },
+      {
+        "rule_id": "EMIR-VR028",
+        "name": "Country Code Format",
+        "expression": "df['reporting_cp_branch_country'].isna() | df['reporting_cp_branch_country'].str.match(r'^[A-Z]{2}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid country code format."
+      },
+      {
+        "rule_id": "EMIR-VR029",
+        "name": "Valid Country Code",
+        "expression": "df['reporting_cp_branch_country'].isna() | df['reporting_cp_branch_country'].isin(ISO_3166_COUNTRIES)",
+        "severity": "BLOCKING",
+        "error_message": "Country code not in ISO 3166-1."
+      },
+      {
+        "rule_id": "EMIR-VR030",
+        "name": "Price Currency Required with Price",
+        "expression": "df['price'].isna() | df['price_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Price currency required when price specified."
+      },
+      {
+        "rule_id": "EMIR-VR031",
+        "name": "Valuation Currency Required",
+        "expression": "df['valuation_amount'].isna() | df['valuation_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Valuation currency required when valuation specified."
+      },
+      {
+        "rule_id": "EMIR-VR032",
+        "name": "Initial Margin Currency Required",
+        "expression": "df['initial_margin_posted'].isna() | df['initial_margin_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Initial margin currency required when margin specified."
+      },
+      {
+        "rule_id": "EMIR-VR033",
+        "name": "Variation Margin Currency Required",
+        "expression": "df['variation_margin_posted'].isna() | df['variation_margin_currency'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Variation margin currency required when margin specified."
+      },
+      {
+        "rule_id": "EMIR-VR034",
+        "name": "Execution Timestamp Format",
+        "expression": "df['execution_timestamp'].str.match(r'^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}', na=False)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid execution timestamp format."
+      },
+      {
+        "rule_id": "EMIR-VR035",
+        "name": "Execution Not Future",
+        "expression": "pd.to_datetime(df['execution_timestamp'], errors='coerce') <= pd.Timestamp.utcnow()",
+        "severity": "BLOCKING",
+        "error_message": "Execution timestamp cannot be in the future."
+      },
+      {
+        "rule_id": "EMIR-VR036",
+        "name": "ISIN Format When Specified",
+        "expression": "df['product_isin'].isna() | df['product_isin'].str.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid ISIN format."
+      },
+      {
+        "rule_id": "EMIR-VR037",
+        "name": "CFI Code Format",
+        "expression": "df['cfi_code'].isna() | df['cfi_code'].str.match(r'^[A-Z]{6}$', na=True)",
+        "severity": "BLOCKING",
+        "error_message": "Invalid CFI code format."
+      },
+      {
+        "rule_id": "EMIR-VR038",
+        "name": "Reasonable Notional Range",
+        "expression": "pd.to_numeric(df['notional_amount'], errors='coerce') < 1e15",
+        "severity": "WARNING",
+        "error_message": "Notional amount appears unusually large."
+      },
+      {
+        "rule_id": "EMIR-VR039",
+        "name": "Reasonable Maturity Range",
+        "expression": "(pd.to_datetime(df['maturity_date'], errors='coerce') - pd.to_datetime(df['effective_date'], errors='coerce')).dt.days < 36500",
+        "severity": "WARNING",
+        "error_message": "Maturity appears more than 100 years from effective date."
+      },
+      {
+        "rule_id": "EMIR-VR040",
+        "name": "T+1 Reporting Check",
+        "expression": "df['action_type'] != 'NEWT' | ((pd.Timestamp.utcnow() - pd.to_datetime(df['execution_timestamp'], errors='coerce')).dt.days <= 1)",
+        "severity": "WARNING",
+        "error_message": "New trade report may be late - T+1 deadline."
+      },
+      {
+        "rule_id": "EMIR-VR041",
+        "name": "Asset Class Contract Type Consistency",
+        "expression": "(df['asset_class'] != 'INTR') | df['contract_type'].isin(['SWAP', 'FRAS', 'FUTR', 'OPTN', 'SWPT', 'OTHR'])",
+        "severity": "WARNING",
+        "error_message": "Contract type may not match asset class."
+      },
+      {
+        "rule_id": "EMIR-VR042",
+        "name": "Collateral Portfolio Code Required",
+        "expression": "(~df['collateralisation'].isin(['PRCL', 'PRC1', 'PRC2'])) | df['collateral_portfolio_code'].notna()",
+        "severity": "BLOCKING",
+        "error_message": "Collateral portfolio code required for portfolio margining."
+      }
     ]
   },
   "documentation_url": "https://docs.openreg.io/templates/emir"
