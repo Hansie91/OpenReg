@@ -5,7 +5,7 @@ This module defines all SQLAlchemy ORM models for the application.
 Models are organized logically by domain.
 """
 
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum, BigInteger, Date, JSON, LargeBinary, Table
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum, BigInteger, Date, JSON, LargeBinary, Table, UniqueConstraint, Index, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -53,6 +53,15 @@ class ScheduleType(str, enum.Enum):
     MANUAL = "manual"
 
 
+class PeriodType(str, enum.Enum):
+    """Reporting period type for aggregation reports."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    YEARLY = "yearly"
+
+
 class TriggerType(str, enum.Enum):
     API = "api"
     EVENT = "event"
@@ -78,6 +87,7 @@ class TriggeredBy(str, enum.Enum):
 class DeliveryProtocol(str, enum.Enum):
     SFTP = "sftp"
     FTP = "ftp"
+    EMAIL = "email"
 
 
 class DeliveryStatus(str, enum.Enum):
@@ -93,6 +103,16 @@ class ExceptionStatus(str, enum.Enum):
     RESUBMITTED = "resubmitted"
     RESOLVED = "resolved"
     REJECTED = "rejected"
+
+
+class ActionType(str, enum.Enum):
+    """ISO 20022 action type for regulatory reporting"""
+    NEWT = "NEWT"  # New transaction
+    MODI = "MODI"  # Modification/correction
+    CANC = "CANC"  # Cancellation
+    EROR = "EROR"  # Error correction
+    CORR = "CORR"  # Correction (generic)
+    REVI = "REVI"  # Revision
 
 
 class FileSubmissionStatus(str, enum.Enum):
@@ -346,7 +366,17 @@ class Report(Base, TimestampMixin):
     #   "threshold_count": int (default 10000)
     # }
     streaming_config = Column(JSONB, nullable=True)
-    
+
+    # Operational config - settings that DON'T affect report output (no versioning)
+    # Schema: {
+    #   "validation_rules": [...],  # Validation rules (from package, library, custom)
+    #   "schedule": {...},          # Schedule configuration
+    #   "delivery": {...},          # Delivery destinations and settings
+    #   "archive": {...},           # Archive storage settings
+    #   "webhook": {...}            # Webhook notifications
+    # }
+    operational_config = Column(JSONB, nullable=True)
+
     # Relationships
     tenant = relationship("Tenant", back_populates="reports")
     versions = relationship("ReportVersion", back_populates="report", foreign_keys="ReportVersion.report_id", cascade="all, delete-orphan")
@@ -404,7 +434,7 @@ class ReportVersion(Base, TimestampMixin):
     report = relationship("Report", back_populates="versions", foreign_keys=[report_id])
     connector = relationship("Connector", back_populates="report_versions")
     validations = relationship("ReportValidation", back_populates="report_version", cascade="all, delete-orphan")
-    job_runs = relationship("JobRun", back_populates="report_version")
+    job_runs = relationship("JobRun", back_populates="report_version", cascade="all, delete-orphan")
     
     @property
     def version_string(self) -> str:
@@ -616,7 +646,7 @@ class ValidationRule(Base, TimestampMixin):
 
 class ValidationResult(Base, TimestampMixin):
     __tablename__ = "validation_results"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
     validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
@@ -627,14 +657,15 @@ class ValidationResult(Base, TimestampMixin):
     exception_count = Column(Integer, default=0, nullable=False)  # Correctable failures
     execution_time_ms = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
-    
+
     # Relationships
+    job_run = relationship("JobRun", back_populates="validation_results")
     validation_rule = relationship("ValidationRule", back_populates="validation_results")
 
 
 class ValidationException(Base, TimestampMixin):
     __tablename__ = "validation_exceptions"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
     validation_rule_id = Column(UUID(as_uuid=True), ForeignKey("validation_rules.id"), nullable=False, index=True)
@@ -643,17 +674,68 @@ class ValidationException(Base, TimestampMixin):
     amended_data = Column(JSONB, nullable=True)  # User corrections
     error_message = Column(Text, nullable=False)
     status = Column(Enum(ExceptionStatus), default=ExceptionStatus.PENDING, nullable=False, index=True)
-    
+
     # Amendment tracking
     amended_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     amended_at = Column(DateTime(timezone=True), nullable=True)
     resubmitted_at = Column(DateTime(timezone=True), nullable=True)
     resubmitted_job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=True)
-    
+
+    # Regulatory action type for resubmission (MODI, CANC, etc.)
+    action_type = Column(Enum(ActionType), nullable=True)
+
+    # For split reports: which artifact/file this record belonged to
+    source_artifact_id = Column(UUID(as_uuid=True), ForeignKey("artifacts.id"), nullable=True)
+    source_file_sequence = Column(Integer, nullable=True)  # 1, 2, 3 for split files
+
+    # Relationships
+    job_run = relationship("JobRun", back_populates="validation_exceptions", foreign_keys=[job_run_id])
     validation_rule = relationship("ValidationRule", back_populates="exceptions")
+    source_artifact = relationship("Artifact", foreign_keys=[source_artifact_id])
 
 
 # === Scheduling ===
+
+
+class HolidayCalendar(Base, TimestampMixin):
+    """
+    Shared holiday calendar for business day calculations.
+
+    Can be used across multiple schedules. Combines with schedule-specific
+    blackout_dates to determine non-business days.
+
+    Standard calendars available:
+    - TARGET2: EU payment system holidays
+    - US_FEDERAL: US federal holidays
+    - UK_BANK: UK bank holidays
+    - Custom: User-defined dates
+    """
+    __tablename__ = "holiday_calendars"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Calendar type: 'standard' (predefined) or 'custom'
+    calendar_type = Column(String(50), default="custom", nullable=False)
+
+    # For standard calendars, which one (target2, us_federal, uk_bank)
+    standard_calendar = Column(String(50), nullable=True)
+
+    # Custom holiday dates (YYYY-MM-DD format)
+    # For standard calendars, this can contain additional custom dates
+    holidays = Column(JSONB, default=[], nullable=False)
+
+    # Year range for standard calendar generation
+    # Standard calendars auto-generate dates for these years
+    year_start = Column(Integer, default=2020, nullable=True)
+    year_end = Column(Integer, default=2030, nullable=True)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Relationships
+    schedules = relationship("Schedule", back_populates="holiday_calendar")
 
 
 class Schedule(Base, TimestampMixin):
@@ -672,6 +754,34 @@ class Schedule(Base, TimestampMixin):
     last_run_status = Column(String(50), nullable=True)
     parameters = Column(JSONB, default={}, nullable=True)
 
+    # === Business Date Configuration ===
+    # How many business days back from run date (0=T+0, 1=T+1, 2=T+2)
+    business_day_offset = Column(Integer, default=1, nullable=False)
+
+    # What counts as a non-business day
+    skip_weekends = Column(Boolean, default=True, nullable=False)
+    skip_holidays = Column(Boolean, default=True, nullable=False)
+
+    # Reference to shared holiday calendar
+    holiday_calendar_id = Column(UUID(as_uuid=True), ForeignKey("holiday_calendars.id"), nullable=True)
+
+    # Schedule-specific blackout dates (in addition to holiday calendar)
+    # Format: ["2025-01-15", "2025-12-24", ...]
+    blackout_dates = Column(JSONB, default=[], nullable=True)
+
+    # === Period Configuration (for aggregation reports) ===
+    # Period type determines what date range parameters are passed
+    # Use values_callable to ensure PostgreSQL enum receives lowercase values ("daily" not "DAILY")
+    period_type = Column(Enum(PeriodType, values_callable=lambda x: [e.value for e in x]), default=PeriodType.DAILY, nullable=False)
+
+    # When to run period reports:
+    # - 'first_business_day': First business day of new period
+    # - 'last_business_day': Last business day of current period
+    # - 'nth_business_day': Nth business day of new period
+    # - 'fixed_day': Specific day (e.g., 5th of month)
+    period_run_on = Column(String(50), default="first_business_day", nullable=True)
+    period_nth_day = Column(Integer, nullable=True)  # For nth_business_day option
+
     # === External Sync Tracking ===
     external_source = Column(Enum(ExternalSyncSource), nullable=True, index=True)
     external_api_config_id = Column(UUID(as_uuid=True), ForeignKey("external_api_configs.id"), nullable=True, index=True)
@@ -686,7 +796,65 @@ class Schedule(Base, TimestampMixin):
 
     # Relationships
     report = relationship("Report", back_populates="schedules")
+    holiday_calendar = relationship("HolidayCalendar", back_populates="schedules")
 
+    # Dependencies where this schedule must run first
+    dependents = relationship(
+        "ScheduleDependency",
+        foreign_keys="ScheduleDependency.depends_on_schedule_id",
+        back_populates="depends_on_schedule"
+    )
+    # Dependencies that this schedule needs
+    dependencies = relationship(
+        "ScheduleDependency",
+        foreign_keys="ScheduleDependency.schedule_id",
+        back_populates="schedule"
+    )
+
+
+class ScheduleDependency(Base, TimestampMixin):
+    """
+    Defines dependencies between schedules.
+
+    A schedule will only execute if all its dependencies have completed successfully
+    for the same business_date. This enables scenarios like:
+    - Transaction reports must complete before Position reports
+    - Daily reports must complete before Weekly aggregations
+
+    The dependency is satisfied when the depends_on_schedule has a successful
+    job run for the same business_date as the scheduled run.
+    """
+    __tablename__ = "schedule_dependencies"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # The schedule that has the dependency
+    schedule_id = Column(UUID(as_uuid=True), ForeignKey("schedules.id"), nullable=False, index=True)
+
+    # The schedule that must complete first
+    depends_on_schedule_id = Column(UUID(as_uuid=True), ForeignKey("schedules.id"), nullable=False, index=True)
+
+    # How to match business dates for dependency checking
+    # "same_day": Both must report for the same business_date
+    # "previous_day": Dependency must have completed for the previous business_date
+    # "any_recent": Any successful run in the last 24 hours satisfies
+    date_match_mode = Column(String(50), default="same_day", nullable=False)
+
+    # Optional: require dependency to have completed within this many minutes
+    # If null, any same-day completion is acceptable
+    max_age_minutes = Column(Integer, nullable=True)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Relationships
+    schedule = relationship("Schedule", foreign_keys=[schedule_id], back_populates="dependencies")
+    depends_on_schedule = relationship("Schedule", foreign_keys=[depends_on_schedule_id], back_populates="dependents")
+
+    __table_args__ = (
+        # Prevent duplicate dependencies
+        # CREATE UNIQUE INDEX uix_schedule_dependency ON schedule_dependencies (schedule_id, depends_on_schedule_id);
+    )
 
 
 class Trigger(Base, TimestampMixin):
@@ -708,7 +876,7 @@ class Trigger(Base, TimestampMixin):
 
 class JobRun(Base):
     __tablename__ = "job_runs"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     report_version_id = Column(UUID(as_uuid=True), ForeignKey("report_versions.id"), nullable=False, index=True)
@@ -721,10 +889,23 @@ class JobRun(Base):
     error_message = Column(Text, nullable=True)
     logs_uri = Column(String(500), nullable=True)  # Pointer to MinIO/S3 object
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
+
+    # Supplemental/correction run tracking
+    is_supplemental = Column(Boolean, default=False, nullable=False)
+    parent_job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=True)
+    supplemental_sequence = Column(Integer, default=1, nullable=False)  # 1st, 2nd, 3rd correction
+    action_type = Column(Enum(ActionType), nullable=True)  # MODI, CANC, etc. for regulatory
+
     # Relationships
     report_version = relationship("ReportVersion", back_populates="job_runs")
     artifacts = relationship("Artifact", back_populates="job_run", cascade="all, delete-orphan")
+    validation_results = relationship("ValidationResult", back_populates="job_run", cascade="all, delete-orphan")
+    validation_exceptions = relationship("ValidationException", back_populates="job_run", cascade="all, delete-orphan", foreign_keys="ValidationException.job_run_id")
+    logs = relationship("JobRunLog", back_populates="job_run", cascade="all, delete-orphan")
+    workflow_execution = relationship("WorkflowExecution", back_populates="job_run", cascade="all, delete-orphan", uselist=False)
+    file_submissions = relationship("FileSubmission", back_populates="job_run", cascade="all, delete-orphan")
+    record_submissions = relationship("RecordSubmission", back_populates="job_run", cascade="all, delete-orphan")
+    parent_job_run = relationship("JobRun", remote_side=[id], backref="supplemental_runs")
 
 
 class Artifact(Base):
@@ -843,8 +1024,9 @@ class FileSubmission(Base, TimestampMixin):
     
     # Parent for supplemental submissions
     parent_submission_id = Column(UUID(as_uuid=True), ForeignKey("file_submissions.id"), nullable=True)
-    
+
     # Relationships
+    job_run = relationship("JobRun", back_populates="file_submissions")
     records = relationship("RecordSubmission", back_populates="file_submission", cascade="all, delete-orphan")
 
 
@@ -880,6 +1062,7 @@ class RecordSubmission(Base, TimestampMixin):
     amended_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
+    job_run = relationship("JobRun", back_populates="record_submissions")
     file_submission = relationship("FileSubmission", back_populates="records")
     status_history = relationship("RecordStatusHistory", back_populates="record", cascade="all, delete-orphan")
 
@@ -911,7 +1094,7 @@ class JobRunLog(Base):
     Logs are stored here for recent runs and archived to MinIO for older runs.
     """
     __tablename__ = "job_run_logs"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id"), nullable=False, index=True)
     line_number = Column(Integer, nullable=False)  # Sequential line number
@@ -919,7 +1102,10 @@ class JobRunLog(Base):
     level = Column(Enum(LogLevel), default=LogLevel.INFO, nullable=False)
     message = Column(Text, nullable=False)
     context = Column(JSONB, nullable=True)  # Additional structured data (row count, validation name, etc.)
-    
+
+    # Relationships
+    job_run = relationship("JobRun", back_populates="logs")
+
     # Composite index for efficient streaming queries
     __table_args__ = (
         # Index for fetching logs after a given line
@@ -1259,7 +1445,7 @@ class WorkflowExecution(Base, TimestampMixin):
     state_history = Column(JSONB, default=[])
 
     # Relationships
-    job_run = relationship("JobRun", backref="workflow_execution", uselist=False)
+    job_run = relationship("JobRun", back_populates="workflow_execution", uselist=False)
     steps = relationship("WorkflowStep", back_populates="workflow_execution", cascade="all, delete-orphan")
 
 
@@ -1599,3 +1785,820 @@ class ExternalAPISyncLog(Base, TimestampMixin):
     trigger_user = relationship("User")
 
 
+# === Canonical Data Model (CDM-Aligned) ===
+
+class PartyRole(enum.Enum):
+    """CDM-aligned party roles in a transaction."""
+    BUYER = "buyer"
+    SELLER = "seller"
+    REPORTING_COUNTERPARTY = "reporting_counterparty"
+    OTHER_COUNTERPARTY = "other_counterparty"
+    BROKER = "broker"
+    CLEARING_MEMBER = "clearing_member"
+    CCP = "ccp"
+    EXECUTION_AGENT = "execution_agent"
+    BENEFICIARY = "beneficiary"
+    SUBMITTING_ENTITY = "submitting_entity"
+
+
+class ProductType(enum.Enum):
+    """CDM-aligned product types."""
+    INTEREST_RATE = "interest_rate"
+    CREDIT = "credit"
+    EQUITY = "equity"
+    FOREIGN_EXCHANGE = "foreign_exchange"
+    COMMODITY = "commodity"
+    OTHER = "other"
+
+
+class AssetClass(enum.Enum):
+    """CDM-aligned asset classes for MiFIR/EMIR."""
+    INTEREST_RATE = "interest_rate"
+    CREDIT = "credit"
+    EQUITY = "equity"
+    FOREIGN_EXCHANGE = "foreign_exchange"
+    COMMODITY = "commodity"
+    EMISSION_ALLOWANCE = "emission_allowance"
+    OTHER = "other"
+
+
+class TransactionType(enum.Enum):
+    """CDM-aligned transaction types."""
+    NEW = "new"
+    MODIFY = "modify"
+    CANCEL = "cancel"
+    CORRECT = "correct"
+    TERMINATE = "terminate"
+    NOVATION = "novation"
+    COMPRESSION = "compression"
+    POSITION_COMPONENT = "position_component"
+
+
+class ExecutionType(enum.Enum):
+    """CDM-aligned execution types."""
+    ELECTRONIC = "electronic"
+    VOICE = "voice"
+    ALGORITHMIC = "algorithmic"
+    BLOCK_TRADE = "block_trade"
+    OFF_BOOK = "off_book"
+    ON_BOOK = "on_book"
+
+
+class ClearingStatus(enum.Enum):
+    """CDM-aligned clearing statuses."""
+    CLEARED = "cleared"
+    NON_CLEARED = "non_cleared"
+    INTENDED = "intended"
+    EXEMPT = "exempt"
+
+
+class ConfirmationStatus(enum.Enum):
+    """CDM-aligned confirmation statuses."""
+    CONFIRMED = "confirmed"
+    UNCONFIRMED = "unconfirmed"
+    PENDING = "pending"
+
+
+class CollateralizationType(enum.Enum):
+    """CDM-aligned collateralization types."""
+    FULLY = "fully"
+    PARTIALLY = "partially"
+    UNCOLLATERALIZED = "uncollateralized"
+    ONE_WAY = "one_way"
+
+
+class ValuationType(enum.Enum):
+    """CDM-aligned valuation types."""
+    MARK_TO_MARKET = "mark_to_market"
+    MARK_TO_MODEL = "mark_to_model"
+    CCP_VALUATION = "ccp_valuation"
+
+
+class CanonicalModelVersion(Base, TimestampMixin):
+    """
+    Tracks canonical model schema versions.
+
+    Allows tracking which CDM version the schema is aligned to and managing
+    backward compatibility during upgrades.
+    """
+    __tablename__ = "canonical_model_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version = Column(String(50), nullable=False, unique=True)  # e.g., "2.0.0"
+    cdm_version = Column(String(50), nullable=True)  # e.g., "6.0.0" for ISDA CDM
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=False, nullable=False)
+    schema_definition = Column(JSONB, nullable=True)  # JSON Schema of canonical model
+    migration_notes = Column(Text, nullable=True)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class CanonicalFieldDefinition(Base, TimestampMixin):
+    """
+    Defines fields in the canonical model with their mappings to CDM and regulations.
+
+    Used to document field semantics, validation rules, and mappings to
+    regulatory report fields. This is the CDM Field Catalog.
+
+    Schema matches migration 006_add_canonical_model.
+    """
+    __tablename__ = "canonical_field_definitions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Field identification
+    entity_name = Column(String(100), nullable=False)  # e.g., "TradeEvent", "Party", "Product"
+    field_name = Column(String(100), nullable=False)  # e.g., "uti", "lei"
+    field_path = Column(String(500), nullable=False, unique=True)  # e.g., "trade.uti", "party.buyer.lei"
+
+    # Data type info
+    data_type = Column(String(50), nullable=False)  # string, decimal, date, datetime, boolean, enum
+    max_length = Column(Integer, nullable=True)
+    precision = Column(Integer, nullable=True)
+    scale = Column(Integer, nullable=True)
+
+    # CDM mapping
+    cdm_path = Column(String(500), nullable=True)  # CDM path, e.g., "trade.tradeHeader.tradeDate"
+    cdm_type = Column(String(100), nullable=True)  # CDM type
+
+    # Versioning
+    introduced_in_version = Column(String(20), nullable=False, default='2.0.0')
+    deprecated_in_version = Column(String(20), nullable=True)
+    removed_in_version = Column(String(20), nullable=True)
+    deprecation_reason = Column(Text, nullable=True)
+    replacement_field = Column(String(500), nullable=True)
+
+    # Regulatory mappings
+    # Schema: {"EMIR": {"field_id": "13", "requirement": "mandatory"}, ...}
+    regulatory_mappings = Column(JSONB, nullable=True, default={})
+    required_by_regulations = Column(JSONB, nullable=True, default=[])
+
+    # Documentation
+    description = Column(Text, nullable=True)
+    example_values = Column(JSONB, nullable=True)
+    validation_rules = Column(JSONB, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("entity_name", "field_name", name="uq_field_definition"),
+    )
+
+
+class CanonicalLegalEntity(Base, TimestampMixin):
+    """
+    Reference data for legal entities (LEI-based).
+
+    Stores LEI data from GLEIF for party enrichment in the canonical model.
+    """
+    __tablename__ = "canonical_legal_entities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lei = Column(String(20), nullable=False, unique=True, index=True)
+
+    # Entity details
+    legal_name = Column(String(500), nullable=True)
+    trading_name = Column(String(500), nullable=True)
+    entity_status = Column(String(50), nullable=True)  # ACTIVE, INACTIVE, etc.
+
+    # Location
+    legal_country = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2
+    legal_city = Column(String(200), nullable=True)
+    headquarters_country = Column(String(2), nullable=True)
+    headquarters_city = Column(String(200), nullable=True)
+
+    # Hierarchy
+    direct_parent_lei = Column(String(20), nullable=True, index=True)
+    ultimate_parent_lei = Column(String(20), nullable=True, index=True)
+
+    # Classification
+    entity_category = Column(String(100), nullable=True)  # e.g., "FUND", "BRANCH"
+    is_financial_institution = Column(Boolean, nullable=True)
+
+    # Data source
+    data_source = Column(String(50), nullable=True)  # GLEIF, MANUAL, etc.
+    last_updated = Column(DateTime(timezone=True), nullable=True)
+
+
+class CanonicalInstrument(Base, TimestampMixin):
+    """
+    Reference data for financial instruments.
+
+    Stores instrument data for product enrichment in the canonical model.
+    """
+    __tablename__ = "canonical_instruments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    isin = Column(String(12), nullable=False, unique=True, index=True)
+
+    # Instrument details
+    instrument_name = Column(String(500), nullable=True)
+    cfi_code = Column(String(6), nullable=True)  # Classification of Financial Instruments
+    fisn = Column(String(35), nullable=True)  # Financial Instrument Short Name
+
+    # Classification
+    asset_class = Column(Enum(AssetClass), nullable=True)
+    product_type = Column(Enum(ProductType), nullable=True)
+
+    # Key dates
+    maturity_date = Column(Date, nullable=True)
+    issue_date = Column(Date, nullable=True)
+
+    # Underlying
+    underlying_isin = Column(String(12), nullable=True, index=True)
+
+    # Issuer
+    issuer_lei = Column(String(20), nullable=True, index=True)
+
+    # Data source
+    data_source = Column(String(50), nullable=True)
+    last_updated = Column(DateTime(timezone=True), nullable=True)
+
+
+class CanonicalVenue(Base, TimestampMixin):
+    """
+    Reference data for trading venues.
+
+    Stores MIC codes and venue information for execution enrichment.
+    """
+    __tablename__ = "canonical_venues"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    mic = Column(String(4), nullable=False, unique=True, index=True)
+
+    # Venue details
+    venue_name = Column(String(500), nullable=True)
+    operating_mic = Column(String(4), nullable=True)  # Parent MIC if segment
+    venue_type = Column(String(50), nullable=True)  # RM, MTF, OTF, SI, etc.
+
+    # Location
+    country = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2
+    city = Column(String(200), nullable=True)
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Data source
+    data_source = Column(String(50), nullable=True)
+    last_updated = Column(DateTime(timezone=True), nullable=True)
+
+
+class CanonicalTradeEvent(Base, TimestampMixin):
+    """
+    Core canonical trade event - CDM-aligned.
+
+    This is the central entity representing a trade/transaction event
+    in the canonical model. Parties, products, and executions link to this.
+    """
+    __tablename__ = "canonical_trade_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Source tracking
+    source_system = Column(String(100), nullable=False)
+    source_id = Column(String(255), nullable=False, index=True)  # UTI/UTR or internal ID
+    source_timestamp = Column(DateTime(timezone=True), nullable=True)
+
+    # Transaction identification
+    uti = Column(String(52), nullable=True, index=True)  # Unique Transaction Identifier
+    prior_uti = Column(String(52), nullable=True)  # For lifecycle events
+    report_tracking_number = Column(String(52), nullable=True)
+
+    # Event type
+    transaction_type = Column(Enum(TransactionType), nullable=False)
+    event_timestamp = Column(DateTime(timezone=True), nullable=False)
+
+    # Clearing
+    clearing_status = Column(Enum(ClearingStatus), nullable=True)
+    ccp_lei = Column(String(20), nullable=True)  # If cleared
+
+    # Confirmation
+    confirmation_status = Column(Enum(ConfirmationStatus), nullable=True)
+    confirmation_timestamp = Column(DateTime(timezone=True), nullable=True)
+
+    # Collateral
+    collateralization = Column(Enum(CollateralizationType), nullable=True)
+
+    # Processing status
+    enrichment_status = Column(String(50), default="pending", nullable=False)  # pending, enriched, failed
+    validation_status = Column(String(50), default="pending", nullable=False)  # pending, valid, invalid
+    last_enriched_at = Column(DateTime(timezone=True), nullable=True)
+    last_validated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Raw source data (for debugging/auditing)
+    source_data = Column(JSONB, nullable=True)
+
+    # Relationships
+    parties = relationship("CanonicalParty", back_populates="trade_event", cascade="all, delete-orphan")
+    product = relationship("CanonicalProduct", back_populates="trade_event", uselist=False, cascade="all, delete-orphan")
+    execution = relationship("CanonicalExecution", back_populates="trade_event", uselist=False, cascade="all, delete-orphan")
+    valuations = relationship("CanonicalValuation", back_populates="trade_event", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "source_system", "source_id", name="uq_canonical_trade_source"),
+        Index("ix_canonical_trade_event_uti", "uti"),
+    )
+
+
+class CanonicalParty(Base, TimestampMixin):
+    """
+    Party in a canonical trade event - CDM-aligned.
+
+    Represents counterparties, brokers, CCPs, and other participants
+    in a transaction with their identifying information.
+    """
+    __tablename__ = "canonical_parties"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trade_event_id = Column(UUID(as_uuid=True), ForeignKey("canonical_trade_events.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Party identification
+    party_role = Column(Enum(PartyRole), nullable=False)
+    lei = Column(String(20), nullable=True, index=True)
+    entity_name = Column(String(500), nullable=True)
+    internal_id = Column(String(100), nullable=True)  # Internal party ID if no LEI
+
+    # Classification (for regulatory reporting)
+    is_financial_counterparty = Column(Boolean, nullable=True)  # EMIR: FC vs NFC
+    nfc_plus = Column(Boolean, nullable=True)  # EMIR: NFC+ threshold exceeded
+    sector = Column(String(10), nullable=True)  # EMIR sector code (e.g., "A", "C", "F")
+    country_of_domicile = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2
+    corporate_sector = Column(String(10), nullable=True)  # Corporate sector code
+
+    # Trader/Decision maker (for MiFIR)
+    trader_id = Column(String(50), nullable=True)  # National ID or internal
+    trader_id_type = Column(String(20), nullable=True)  # NATIONAL_ID, CONCAT, etc.
+    decision_maker_id = Column(String(50), nullable=True)
+    decision_maker_id_type = Column(String(20), nullable=True)
+
+    # Relationships
+    trade_event = relationship("CanonicalTradeEvent", back_populates="parties")
+
+
+class CanonicalProduct(Base, TimestampMixin):
+    """
+    Product/instrument in a canonical trade event - CDM-aligned.
+
+    Represents the financial product being traded with its classification,
+    identifiers, and economic terms.
+    """
+    __tablename__ = "canonical_products"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trade_event_id = Column(UUID(as_uuid=True), ForeignKey("canonical_trade_events.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    # Product classification
+    product_type = Column(Enum(ProductType), nullable=True)
+    asset_class = Column(Enum(AssetClass), nullable=True)
+
+    # Product identification
+    isin = Column(String(12), nullable=True, index=True)
+    cfi_code = Column(String(6), nullable=True)
+    instrument_name = Column(String(500), nullable=True)
+
+    # Underlying
+    underlier_id = Column(String(50), nullable=True)  # ISIN, index name, etc.
+    underlier_id_type = Column(String(20), nullable=True)  # ISIN, INDEX, BASKET, etc.
+
+    # Economic terms
+    notional_amount = Column(Numeric(28, 8), nullable=True)
+    notional_currency = Column(String(3), nullable=True)  # ISO 4217
+    price = Column(Numeric(28, 8), nullable=True)
+    price_currency = Column(String(3), nullable=True)
+    quantity = Column(Numeric(28, 8), nullable=True)
+    quantity_unit = Column(String(50), nullable=True)
+
+    # Dates
+    effective_date = Column(Date, nullable=True)
+    maturity_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
+    settlement_date = Column(Date, nullable=True)
+
+    # Rate terms (for IR products)
+    fixed_rate = Column(Numeric(18, 10), nullable=True)
+    floating_rate_index = Column(String(100), nullable=True)  # e.g., "EUR-EURIBOR-Reuters"
+    spread = Column(Numeric(18, 10), nullable=True)
+
+    # Additional terms
+    option_type = Column(String(10), nullable=True)  # CALL, PUT
+    strike_price = Column(Numeric(28, 8), nullable=True)
+    strike_price_currency = Column(String(3), nullable=True)
+
+    # Relationships
+    trade_event = relationship("CanonicalTradeEvent", back_populates="product")
+
+
+class CanonicalExecution(Base, TimestampMixin):
+    """
+    Execution details for a canonical trade event - CDM-aligned.
+
+    Captures execution venue, timing, and method information
+    required for MiFIR and other transaction reporting.
+    """
+    __tablename__ = "canonical_executions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trade_event_id = Column(UUID(as_uuid=True), ForeignKey("canonical_trade_events.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    # Execution venue
+    trading_venue_mic = Column(String(4), nullable=True, index=True)
+    execution_venue_mic = Column(String(4), nullable=True)
+
+    # Execution details
+    execution_type = Column(Enum(ExecutionType), nullable=True)
+    execution_timestamp = Column(DateTime(timezone=True), nullable=True)
+    trading_capacity = Column(String(10), nullable=True)  # DEAL (principal), AOTC, MTCH
+
+    # Transaction details
+    buy_sell_indicator = Column(String(1), nullable=True)  # B, S
+    aggressor_indicator = Column(String(1), nullable=True)  # Y, N
+
+    # Waiver flags (MiFIR)
+    waiver_indicator = Column(String(10), nullable=True)  # LRGS, OILQ, PRIC, etc.
+
+    # Short selling
+    short_selling_indicator = Column(String(10), nullable=True)  # SESH, SSEX, UNDI
+
+    # OTC indicator
+    otc_post_trade_indicator = Column(String(50), nullable=True)  # Comma-separated flags
+
+    # Up-front payment (for certain derivatives)
+    up_front_payment = Column(Numeric(28, 8), nullable=True)
+    up_front_payment_currency = Column(String(3), nullable=True)
+
+    # Relationships
+    trade_event = relationship("CanonicalTradeEvent", back_populates="execution")
+
+
+class CanonicalValuation(Base, TimestampMixin):
+    """
+    Valuation snapshot for a canonical trade event - CDM-aligned.
+
+    Stores periodic valuations required for EMIR margin/valuation reporting.
+    """
+    __tablename__ = "canonical_valuations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trade_event_id = Column(UUID(as_uuid=True), ForeignKey("canonical_trade_events.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Valuation details
+    valuation_timestamp = Column(DateTime(timezone=True), nullable=False)
+    valuation_type = Column(Enum(ValuationType), nullable=True)
+    valuation_amount = Column(Numeric(28, 8), nullable=False)
+    valuation_currency = Column(String(3), nullable=False)
+
+    # Collateral
+    collateral_portfolio_code = Column(String(52), nullable=True)
+    initial_margin_posted = Column(Numeric(28, 8), nullable=True)
+    initial_margin_posted_currency = Column(String(3), nullable=True)
+    initial_margin_received = Column(Numeric(28, 8), nullable=True)
+    initial_margin_received_currency = Column(String(3), nullable=True)
+    variation_margin_posted = Column(Numeric(28, 8), nullable=True)
+    variation_margin_posted_currency = Column(String(3), nullable=True)
+    variation_margin_received = Column(Numeric(28, 8), nullable=True)
+    variation_margin_received_currency = Column(String(3), nullable=True)
+
+    # Relationships
+    trade_event = relationship("CanonicalTradeEvent", back_populates="valuations")
+
+
+class CanonicalSourceMapping(Base, TimestampMixin):
+    """
+    Maps source system fields to canonical model fields.
+
+    Defines how data from various source systems (connectors/tables)
+    maps to the canonical trade event model.
+    """
+    __tablename__ = "canonical_source_mappings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Source identification
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    connector_id = Column(UUID(as_uuid=True), ForeignKey("connectors.id"), nullable=True, index=True)
+    source_table = Column(String(500), nullable=True)  # Table/entity name
+    source_query = Column(Text, nullable=True)  # Optional custom query
+
+    # Model version
+    canonical_model_version = Column(String(20), nullable=False, default="1.0.0")
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    creator = relationship("User")
+    connector = relationship("Connector")
+    field_mappings = relationship("CanonicalFieldMapping", back_populates="source_mapping", cascade="all, delete-orphan")
+
+
+class CanonicalFieldMapping(Base):
+    """
+    Individual field mapping within a source mapping.
+
+    Detailed mapping configuration for a single source-to-canonical field mapping
+    with transformation logic.
+
+    Supports regulation-specific overrides:
+    - regulation=NULL: Default mapping (applies to all regulations unless overridden)
+    - regulation='EMIR'/'MIFIR'/'SFTR': Regulation-specific override
+
+    Resolution logic: Regulation-specific mapping wins; if none exists, use default.
+    """
+    __tablename__ = "canonical_field_mappings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_mapping_id = Column(UUID(as_uuid=True), ForeignKey("canonical_source_mappings.id"), nullable=False, index=True)
+
+    # Source field
+    source_column = Column(String(255), nullable=False)
+    source_data_type = Column(String(50), nullable=True)
+
+    # Target field (canonical path)
+    canonical_path = Column(String(500), nullable=False)  # e.g., "party.buyer.lei"
+    canonical_entity = Column(String(100), nullable=False)  # e.g., "CanonicalParty"
+
+    # Regulation-specific mapping
+    # NULL = default mapping (applies to all regulations unless overridden)
+    # 'EMIR', 'MIFIR', 'SFTR' = regulation-specific override
+    regulation = Column(String(20), nullable=True, index=True)
+
+    # Transformation
+    transform_type = Column(String(50), nullable=True)
+    transform_expression = Column(Text, nullable=True)
+
+    # Lookup configuration
+    lookup_table = Column(String(255), nullable=True)
+    lookup_key_column = Column(String(255), nullable=True)
+    lookup_value_column = Column(String(255), nullable=True)
+
+    # Default and validation
+    default_value = Column(String(500), nullable=True)
+    is_required = Column(Boolean, nullable=True)
+    validation_regex = Column(String(500), nullable=True)
+    validation_expression = Column(Text, nullable=True)
+
+    # Metadata
+    description = Column(Text, nullable=True)
+
+    # Relationship
+    source_mapping = relationship("CanonicalSourceMapping", back_populates="field_mappings")
+
+    __table_args__ = (
+        UniqueConstraint("source_mapping_id", "canonical_path", "regulation",
+                        name="uq_canonical_field_mapping_reg"),
+    )
+
+
+class LineageTransformType(str, enum.Enum):
+    """Types of transformations applied in field lineage."""
+    DIRECT = "direct"
+    UPPER = "upper"
+    LOWER = "lower"
+    TRIM = "trim"
+    COALESCE = "coalesce"
+    CONCAT = "concat"
+    LOOKUP = "lookup"
+    FORMAT = "format"
+    CONVERT = "convert"
+    CALCULATE = "calculate"
+    CONDITIONAL = "conditional"
+    CUSTOM = "custom"
+
+
+class CanonicalFieldLineage(Base, TimestampMixin):
+    """
+    Field-level data lineage for CDM fields.
+
+    Tracks how data flows from source tables through transformations
+    to the canonical data model, enabling full traceability for
+    regulatory compliance and data governance.
+
+    Example lineage:
+    src_clients.lei -> UPPER(TRIM()) -> vw_cdm_trade_data.buyer_lei -> party.buyer.lei
+    """
+    __tablename__ = "canonical_field_lineage"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    source_mapping_id = Column(UUID(as_uuid=True), ForeignKey("canonical_source_mappings.id"), nullable=True, index=True)
+
+    # === Source Origin ===
+    source_table = Column(String(255), nullable=False)
+    source_column = Column(String(255), nullable=False)
+    source_data_type = Column(String(50), nullable=True)
+
+    # === View Layer (optional intermediate) ===
+    view_name = Column(String(255), nullable=True)
+    view_column = Column(String(255), nullable=True)
+
+    # === CDM Target ===
+    cdm_entity = Column(String(100), nullable=False)  # e.g., "CanonicalParty"
+    cdm_field = Column(String(100), nullable=False)   # e.g., "lei"
+    cdm_path = Column(String(500), nullable=False)    # e.g., "party.buyer.lei"
+
+    # === Transformation ===
+    transformation_type = Column(Enum(LineageTransformType), default=LineageTransformType.DIRECT, nullable=False)
+    transformation_expression = Column(Text, nullable=True)  # e.g., "UPPER(TRIM(lei))"
+    transformation_description = Column(Text, nullable=True)  # Human-readable description
+
+    # === Join Information ===
+    join_table = Column(String(255), nullable=True)
+    join_condition = Column(Text, nullable=True)  # e.g., "src_trades.buyer_client_id = src_clients.id"
+
+    # === Regulatory References ===
+    # JSON array of regulation/field references
+    # e.g., ["EMIR Field 3", "MiFIR Field 6", "SFTR Field 12"]
+    regulatory_references = Column(JSONB, default=[], nullable=False)
+
+    # === Metadata ===
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    source_mapping = relationship("CanonicalSourceMapping")
+    creator = relationship("User")
+
+    __table_args__ = (
+        Index("ix_field_lineage_cdm_path", "cdm_path"),
+        Index("ix_field_lineage_source", "source_table", "source_column"),
+        Index("ix_field_lineage_tenant_cdm", "tenant_id", "cdm_path"),
+        UniqueConstraint("tenant_id", "cdm_path", "source_mapping_id", name="uq_field_lineage_path_tenant_mapping"),
+    )
+
+
+# === Data Quality Indicators ===
+
+class DQIStatus(str, enum.Enum):
+    """Status based on threshold evaluation"""
+    HEALTHY = "healthy"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class DataQualityIndicator(Base, TimestampMixin):
+    """
+    Configurable Data Quality Indicator definition.
+
+    DQIs can be:
+    - Packaged: Pre-defined for regulations (EMIR, MiFIR, SFTR)
+    - Custom: Tenant-specific definitions
+
+    Each DQI has a numerator and denominator SQL that compute the percentage.
+    """
+    __tablename__ = "data_quality_indicators"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+
+    name = Column(String(255), nullable=False)
+    code = Column(String(50), nullable=False, index=True)  # e.g., "EMIR-DQI-001"
+    description = Column(Text, nullable=True)
+    category = Column(String(100), nullable=True)  # "pairing", "valuation", "completeness"
+
+    # SQL formulas - executed with parameter substitution
+    numerator_sql = Column(Text, nullable=False)
+    denominator_sql = Column(Text, nullable=False)
+
+    # Thresholds for status evaluation
+    warning_threshold = Column(Numeric(5, 2), nullable=False, default=5.0)   # Default 5%
+    critical_threshold = Column(Numeric(5, 2), nullable=False, default=10.0)  # Default 10%
+
+    regulation = Column(String(50), nullable=True, index=True)  # "EMIR", "MIFIR", "SFTR"
+    is_packaged = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    display_order = Column(Integer, default=0, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    creator = relationship("User")
+    report_configs = relationship("ReportDQIConfig", back_populates="dqi", cascade="all, delete-orphan")
+    results = relationship("DQIResult", back_populates="dqi", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_dqi_tenant_regulation", "tenant_id", "regulation"),
+    )
+
+
+class ReportDQIConfig(Base, TimestampMixin):
+    """
+    Per-report DQI configuration.
+
+    Links a DQI to a report with optional threshold overrides.
+    """
+    __tablename__ = "report_dqi_configs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    dqi_id = Column(UUID(as_uuid=True), ForeignKey("data_quality_indicators.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Optional threshold overrides
+    warning_threshold_override = Column(Numeric(5, 2), nullable=True)
+    critical_threshold_override = Column(Numeric(5, 2), nullable=True)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    display_order = Column(Integer, default=0, nullable=False)
+
+    # Relationships
+    report = relationship("Report")
+    dqi = relationship("DataQualityIndicator", back_populates="report_configs")
+
+    __table_args__ = (
+        UniqueConstraint("report_id", "dqi_id", name="uq_report_dqi_config"),
+    )
+
+
+class DQIResult(Base):
+    """
+    Cached execution results for DQIs.
+
+    Stores the computed values to avoid re-executing SQL on every page load.
+    """
+    __tablename__ = "dqi_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    dqi_id = Column(UUID(as_uuid=True), ForeignKey("data_quality_indicators.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    business_date_from = Column(Date, nullable=False)
+    business_date_to = Column(Date, nullable=False)
+
+    numerator_value = Column(Integer, nullable=False)
+    denominator_value = Column(Integer, nullable=False)
+    percentage = Column(Numeric(7, 4), nullable=False)
+    status = Column(String(20), nullable=False)  # "healthy", "warning", "critical"
+
+    executed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    execution_time_ms = Column(Integer, nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    report = relationship("Report")
+    dqi = relationship("DataQualityIndicator", back_populates="results")
+
+    __table_args__ = (
+        Index("ix_dqi_results_lookup", "tenant_id", "report_id", "dqi_id", "business_date_from", "business_date_to"),
+    )
+
+
+class TRSubmissionRecord(Base, TimestampMixin):
+    """
+    Trade Repository submission record tracking.
+
+    Stores individual record status from Trade Repository responses.
+    Used for calculating EMIR DQIs (pairing, position, valuation, etc.).
+    """
+    __tablename__ = "tr_submission_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_run_id = Column(UUID(as_uuid=True), ForeignKey("job_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    business_date = Column(Date, nullable=False)
+
+    # Record identification
+    uti = Column(String(100), nullable=False)
+    record_ref = Column(String(100), nullable=True)
+    counterparty_lei = Column(String(20), nullable=True)
+
+    # Pairing status (from TR response)
+    pairing_status = Column(String(20), nullable=True)  # "PAIRED", "UNPAIRED", "MISMATCH"
+    pairing_counterparty_uti = Column(String(100), nullable=True)
+    pairing_mismatch_fields = Column(JSONB, nullable=True)
+
+    # Position reconciliation
+    position_status = Column(String(20), nullable=True)  # "MATCHED", "MISMATCHED", "PENDING"
+    position_mismatch_details = Column(JSONB, nullable=True)
+
+    # Valuation status
+    has_valuation = Column(Boolean, default=False, nullable=False)
+    valuation_date = Column(Date, nullable=True)
+    valuation_is_stale = Column(Boolean, default=False, nullable=False)
+
+    # Data quality flags
+    maturity_date = Column(Date, nullable=True)
+    maturity_is_valid = Column(Boolean, default=True, nullable=False)
+    err_status = Column(String(20), nullable=True)  # "CORRECT", "INCORRECT"
+    err_expected = Column(String(50), nullable=True)
+    err_reported = Column(String(50), nullable=True)
+
+    # TR response
+    tr_status = Column(String(20), nullable=True)  # "ACCEPTED", "REJECTED", "PENDING"
+    tr_rejection_code = Column(String(50), nullable=True)
+    tr_rejection_message = Column(Text, nullable=True)
+    tr_response_timestamp = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    tenant = relationship("Tenant")
+    report = relationship("Report")
+    job_run = relationship("JobRun")
+
+    __table_args__ = (
+        Index("ix_tr_records_lookup", "tenant_id", "report_id", "business_date"),
+        Index("ix_tr_records_uti", "tenant_id", "uti"),
+    )
