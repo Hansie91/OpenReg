@@ -151,9 +151,43 @@ docker-compose exec backend python init_db.py
 
 ## ✨ Key Features
 
-### Common Data Model (CDM)
+### Common Data Model (CDM) — Based on ISDA CDM
 
-OpenReg includes a **Common Data Model** that normalizes data from multiple source systems into a canonical format optimized for regulatory reporting.
+OpenReg includes a **Common Data Model** inspired by the [ISDA Common Domain Model (CDM)](https://www.isda.org/2019/10/14/isda-common-domain-model/), the industry standard for representing financial products, trades, and lifecycle events. Our CDM normalizes data from multiple source systems into a canonical format optimized for regulatory reporting.
+
+<table>
+<tr>
+<td width="50%">
+
+**ISDA CDM Alignment**
+- Trade and transaction representations following ISDA standards
+- Product taxonomy for derivatives and securities
+- Lifecycle event modeling (NEWT, MODI, CANC, TERM)
+- Party and counterparty identification (LEI-based)
+- Collateral and margin representations
+
+</td>
+<td width="50%">
+
+**OpenReg Extensions**
+- Multi-regulation field mapping layer
+- Source system connectors with ETL pipelines
+- Historical versioning and audit trail
+- Real-time data quality monitoring
+- Field-level lineage tracking
+
+</td>
+</tr>
+</table>
+
+**Why ISDA CDM?**
+
+The ISDA CDM provides a standardized, machine-readable blueprint for financial markets data. By aligning with this industry standard:
+
+- ✅ **Interoperability** — Easier integration with counterparties and market infrastructure
+- ✅ **Regulatory Alignment** — ESMA, FCA, and CFTC increasingly reference CDM concepts
+- ✅ **Future-Proof** — Built on the same foundations as DLT and smart contract initiatives
+- ✅ **Reduced Reconciliation** — Common language reduces breaks in trade matching
 
 <table>
 <tr>
@@ -338,42 +372,151 @@ PENDING → INITIALIZING → FETCHING_DATA → PRE_VALIDATION → TRANSFORMING �
 
 ## 🌍 Supported Regulations
 
-OpenReg provides packaged report templates with pre-configured field mappings, validation rules, and XML schemas for major regulatory regimes.
-
-### European Union
-
-| Regulation | Description | Message Types |
-|------------|-------------|---------------|
-| **EMIR Refit** | OTC derivatives reporting to trade repositories | `auth.030`, `auth.031` |
-| **MiFIR/MiFID II** | Transaction reporting for financial instruments | `auth.016`, `auth.017`, `auth.040` |
-| **SFTR** | Securities financing transaction reporting | `auth.052`, `auth.053` |
-
-### United Kingdom
-
-| Regulation | Description | Status |
-|------------|-------------|--------|
-| **UK EMIR** | Post-Brexit derivatives reporting | ✅ Supported |
-| **UK MiFIR** | UK transaction reporting | ✅ Supported |
-| **UK SFTR** | UK securities financing reporting | ✅ Supported |
-
-### Planned Support
-
-| Regulation | Jurisdiction | Timeline |
-|------------|--------------|----------|
-| **CFTC Rewrite** | United States | Q2 2026 |
-| **SEC CAT** | United States | Q3 2026 |
-| **MAS Reporting** | Singapore | Q4 2026 |
-| **ASIC Reporting** | Australia | 2027 |
+OpenReg provides **production-ready report templates** with pre-configured field mappings, comprehensive validation rules, and ISO 20022 XML schemas for major regulatory regimes.
 
 ### Packaged Report Templates
 
-Each regulation package includes:
+#### MiFIR RTS 25 — Transaction Reporting
 
-- ✅ Pre-built XML/JSON output templates
-- ✅ Field mappings to Common Data Model
-- ✅ Validation rules per regulatory specification
-- ✅ Data Quality Indicators (DQIs)
-- ✅ Sample data for testing
+| | |
+|---|---|
+| **Template ID** | `mifir-rts25-v1` |
+| **Message Type** | `auth.016.001.01` (FinInstrmRptgTxRpt) |
+| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.016.001.01` |
+| **Fields** | 65 mapped fields covering complete RTS 25 specification |
+| **Validations** | 35 rules including LEI checksum, ISIN validation, MIC codes |
+
+**Coverage:** Transaction reference, executing entity, buyer/seller details, instrument identification (ISIN/CFI), trading venue (MIC), price/quantity, trading capacity, waiver indicators, short selling flags.
+
+<details>
+<summary>View validation rules</summary>
+
+- LEI format and checksum validation (ISO 17442)
+- ISIN format and checksum validation (ISO 6166)
+- MIC code validation (ISO 10383)
+- Currency code validation (ISO 4217)
+- Country code validation (ISO 3166-1)
+- CFI code format validation (ISO 10962)
+- Trading capacity values (DEAL, MTCH, AOTC)
+- Report status values (NEWT, CANC, AMND)
+- Buyer/seller differentiation check
+- T+1 reporting deadline warnings
+- Price and quantity range checks
+
+</details>
+
+---
+
+#### EMIR REFIT — Derivative Trade Reporting
+
+| | |
+|---|---|
+| **Template ID** | `emir-refit-v1` |
+| **Message Type** | `auth.030.001.03` (DerivsTradRpt) |
+| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.030.001.03` |
+| **Fields** | Full EMIR REFIT field coverage for OTC and ETD |
+| **Validations** | 42 rules covering counterparty, UTI, dates, amounts |
+
+**Coverage:** UTI (ISO 23897), counterparty LEIs, trade/effective/maturity dates, notional amounts, asset class, contract type, clearing status, collateralization, valuation, margins.
+
+<details>
+<summary>View validation rules</summary>
+
+- UTI format validation (1-52 alphanumeric, LEI prefix)
+- Counterparty LEI format and checksum
+- Counterparties must be different entities
+- Date sequence validation (trade ≤ effective ≤ maturity)
+- Asset class values (INTR, CRDT, EQUI, COMM, CURR)
+- Contract type values (SWAP, FRAS, FUTR, OPTN, etc.)
+- Action type values (NEWT, MODI, CORR, TERM, EROR, etc.)
+- CCP LEI required when cleared = Y
+- Prior UTI required for lifecycle events
+- Financial counterparty sector codes
+- Collateralization type validation
+- T+1 reporting deadline warnings
+
+</details>
+
+---
+
+#### SFTR — Securities Financing Transaction Reporting
+
+| | |
+|---|---|
+| **Template ID** | `sftr-standard-v1` |
+| **Message Type** | `auth.052.001.01` (SctiesFincgRptgTxRpt) |
+| **Namespace** | `urn:iso:std:iso:20022:tech:xsd:auth.052.001.01` |
+| **Fields** | Complete SFTR field set for repos, securities lending, margin lending |
+| **Validations** | 50 rules covering SFT-specific requirements |
+
+**Coverage:** UTI, counterparty LEIs, SFT type (REPO, SLEB, BSBC, MGLD), execution/value/maturity dates, collateral ISIN, principal amount, repo rate, lending fees, haircuts, margins.
+
+<details>
+<summary>View validation rules</summary>
+
+- UTI format validation (ISO 23897)
+- Counterparty LEI validation
+- SFT type values (REPO, SLEB, BSBC, MGLD)
+- Collateral ISIN format and checksum
+- Date sequence validation
+- Action type values (NEWT, MODI, VALU, COLU, ETRM, etc.)
+- CCP LEI required when cleared
+- Prior UTI required for lifecycle events
+- Repo rate required for REPO type
+- Lending fee/rebate required for SLEB type
+- Security ISIN required for securities lending
+- Haircut percentage range (0-100%)
+- Tri-party agent LEI for tri-party transactions
+- Floating rate reference codes (ESTR, SONIA, SOFR, etc.)
+- T+1 reporting deadline warnings
+
+</details>
+
+---
+
+### Regulation Summary
+
+#### European Union
+
+| Regulation | Template | Message Type | Fields | Validations |
+|------------|----------|--------------|--------|-------------|
+| **MiFIR RTS 25** | `mifir-rts25-v1` | auth.016 | 65 | 35 |
+| **EMIR REFIT** | `emir-refit-v1` | auth.030 | 50+ | 42 |
+| **SFTR** | `sftr-standard-v1` | auth.052 | 40+ | 50 |
+
+#### United Kingdom
+
+UK variants use the same templates with jurisdiction-specific configuration:
+
+| Regulation | Base Template | Competent Authority |
+|------------|---------------|---------------------|
+| **UK MiFIR** | `mifir-rts25-v1` | FCA |
+| **UK EMIR** | `emir-refit-v1` | FCA/BoE |
+| **UK SFTR** | `sftr-standard-v1` | FCA |
+
+### Planned Support
+
+| Regulation | Jurisdiction | Timeline | Notes |
+|------------|--------------|----------|-------|
+| **CFTC Rewrite** | United States | Q2 2026 | Swap data reporting |
+| **SEC CAT** | United States | Q3 2026 | Consolidated audit trail |
+| **MAS Reporting** | Singapore | Q4 2026 | OTC derivatives |
+| **ASIC Reporting** | Australia | 2027 | Derivative transaction reporting |
+
+### What's Included in Each Template
+
+Every packaged report template includes:
+
+| Component | Description |
+|-----------|-------------|
+| **Field Mappings** | Complete mapping from CDM fields to XML elements with XPath |
+| **Transformations** | Data type conversions (dates, decimals, booleans, uppercase) |
+| **Validation Rules** | Blocking, warning, and correctable validations |
+| **XML Configuration** | ISO 20022 namespace, message type, header structure |
+| **Default Values** | Sensible defaults for optional fields |
+| **Documentation** | Field-level documentation referencing regulatory specs |
+| **Sample Data** | Test datasets for validation and UAT |
+| **DQI Package** | Pre-configured Data Quality Indicators |
 
 ---
 
