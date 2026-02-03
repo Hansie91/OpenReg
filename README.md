@@ -2,6 +2,8 @@
   <img src="docs/assets/openreg-logo.jpg" alt="OpenReg" width="600">
 </p>
 
+<h1 align="center">OpenReg</h1>
+
 <p align="center">
   <strong>Enterprise-Grade Regulatory Reporting Platform</strong>
 </p>
@@ -17,35 +19,92 @@
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React 18">
   <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 15">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready">
 </p>
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
+  <a href="#-platform-screenshots">Screenshots</a> •
   <a href="#-key-features">Features</a> •
+  <a href="#-supported-regulations">Regulations</a> •
   <a href="#-architecture">Architecture</a> •
-  <a href="#-api-documentation">API</a> •
-  <a href="#-contributing">Contributing</a>
+  <a href="#-api-documentation">API</a>
 </p>
 
 ---
 
 ## Overview
 
-**OpenReg** is a self-hosted, open-source regulatory reporting platform designed for financial institutions, trading firms, and compliance teams. It provides end-to-end automation for generating, validating, and delivering regulatory reports across multiple jurisdictions.
+**OpenReg** is a self-hosted, open-source regulatory reporting platform designed for financial institutions, asset managers, trading firms, and compliance teams. It provides end-to-end automation for generating, validating, and delivering regulatory reports across multiple jurisdictions including **EMIR**, **MiFIR**, **SFTR**, and more.
 
-Built for production environments, OpenReg offers a modern web interface, robust security controls, partner API integration, and the flexibility to handle complex reporting requirements—from simple data transformations to sophisticated multi-source aggregations.
+Built for production environments, OpenReg offers a modern web interface, robust security controls, a Common Data Model (CDM) for data normalization, configurable Data Quality Indicators (DQIs), and the flexibility to handle complex reporting requirements—from simple data transformations to sophisticated multi-source aggregations.
 
 ### Why OpenReg?
 
 | Challenge | OpenReg Solution |
 |-----------|------------------|
 | Manual report generation is error-prone | Automated, repeatable workflows with version control |
-| Regulatory changes require code deployments | No-code configuration for most changes |
-| Multiple data sources and formats | Universal database connectivity with flexible output formats |
+| Regulatory changes require code deployments | No-code configuration with packaged regulation templates |
+| Multiple data sources and formats | Common Data Model (CDM) with universal database connectivity |
+| Complex data quality requirements | Configurable DQIs with threshold-based alerting |
 | Compliance audit requirements | Full audit trail with user attribution and version history |
 | Complex validation requirements | Rule engine with blocking/warning validations and exception management |
-| Delivery to regulators | Automated SFTP/FTP delivery with retry and acknowledgment tracking |
+| Delivery to regulators/trade repositories | Automated SFTP/FTP/Email delivery with retry and acknowledgment tracking |
+| Scheduling complexity | Advanced calendar-based scheduling with holiday calendars and blackout dates |
 | Partner integration needs | Full-featured REST API with webhooks and real-time status |
+
+---
+
+## 📸 Platform Screenshots
+
+### Dashboard
+Real-time overview of reporting operations with daily summaries, recent runs, and system health metrics.
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard" width="100%">
+</p>
+
+### Report Management
+Configure and manage regulatory reports with visual field mapping and XSD schema support.
+
+<p align="center">
+  <img src="docs/screenshots/reports.png" alt="Reports" width="100%">
+</p>
+
+### Common Data Model (CDM)
+Explore the canonical data model with field-level lineage tracing from source systems to regulatory outputs.
+
+<p align="center">
+  <img src="docs/screenshots/cdm.png" alt="Common Data Model" width="100%">
+</p>
+
+### Data Quality Analysis
+Monitor data quality trends with configurable indicators, validation pass rates, and exception tracking.
+
+<p align="center">
+  <img src="docs/screenshots/data-quality.png" alt="Data Quality" width="100%">
+</p>
+
+### Advanced Scheduling
+Configure complex schedules with calendar-based frequency, multiple time slots, holiday calendars, and blackout dates.
+
+<p align="center">
+  <img src="docs/screenshots/schedules.png" alt="Schedules" width="100%">
+</p>
+
+### Execution Monitoring
+Track job runs in real-time with workflow state visualization and detailed logging.
+
+<p align="center">
+  <img src="docs/screenshots/runs.png" alt="Run Monitoring" width="100%">
+</p>
+
+### Exception Management
+Review, amend, and resubmit failed validation records with full audit trail.
+
+<p align="center">
+  <img src="docs/screenshots/exceptions.png" alt="Exception Queue" width="100%">
+</p>
 
 ---
 
@@ -92,6 +151,50 @@ docker-compose exec backend python init_db.py
 
 ## ✨ Key Features
 
+### Common Data Model (CDM)
+
+OpenReg includes a **Common Data Model** that normalizes data from multiple source systems into a canonical format optimized for regulatory reporting.
+
+<table>
+<tr>
+<td width="50%">
+
+**Data Normalization**
+- Canonical schema for trades, positions, valuations
+- Automatic field mapping from source systems
+- Support for multiple source connectors per entity
+- Historical data versioning
+
+</td>
+<td width="50%">
+
+**Field-Level Lineage**
+- Trace any output field to its source
+- Visual lineage explorer in the UI
+- Impact analysis for schema changes
+- Audit-ready documentation
+
+</td>
+</tr>
+</table>
+
+### Data Quality Indicators (DQI)
+
+Configurable quality metrics aligned with regulatory expectations:
+
+| Indicator | Description |
+|-----------|-------------|
+| **Trade Pairing Mismatch Rate** | Percentage of paired trades with field mismatches |
+| **Position Mismatch Rate** | Percentage of positions with reconciliation differences |
+| **Missing Valuation Rate** | Open trades without required valuations |
+| **UTI Pairing Failure Rate** | Trades that failed UTI pairing at the trade repository |
+| **TR Rejection Rate** | Percentage of submissions rejected by the trade repository |
+
+- Configurable warning and critical thresholds
+- Trend analysis over time
+- Per-report DQI assignment
+- Packaged DQIs for each regulation
+
 ### Report Management
 
 <table>
@@ -103,6 +206,7 @@ docker-compose exec backend python init_db.py
 - XSD schema upload with automatic element parsing
 - Support for XML, JSON, CSV, and fixed-width formats
 - Configurable file naming with dynamic tokens
+- Packaged templates for major regulations
 
 </td>
 <td width="50%">
@@ -112,6 +216,7 @@ docker-compose exec backend python init_db.py
 - Sandboxed execution with whitelisted libraries
 - DataFrame-based data manipulation
 - Cross-reference mapping lookups
+- CDM query integration
 
 </td>
 </tr>
@@ -121,18 +226,43 @@ docker-compose exec backend python init_db.py
 
 OpenReg features a state machine-based workflow engine for reliable report execution:
 
-- **Explicit States** — PENDING → INITIALIZING → FETCHING_DATA → PRE_VALIDATION → TRANSFORMING → POST_VALIDATION → GENERATING_ARTIFACTS → DELIVERING → COMPLETED
+```
+PENDING → INITIALIZING → FETCHING_DATA → PRE_VALIDATION → TRANSFORMING → POST_VALIDATION → GENERATING_ARTIFACTS → DELIVERING → COMPLETED
+```
+
 - **Real-time Progress** — Track execution progress (0-100%) with step-by-step updates
 - **Automatic Retry** — Configurable retry policies with exponential/linear backoff
 - **Cancellation Support** — Cancel running workflows gracefully
 - **Execution History** — Full state transition audit trail
 
-### Execution & Scheduling
+### Advanced Scheduling
 
-- **Manual Execution** — Run reports on-demand with custom date ranges
-- **Cron Scheduling** — Standard cron expressions for precise timing
-- **Calendar Integration** — Business day awareness with holiday support
-- **Event Triggers** — Execute based on external events or data changes
+<table>
+<tr>
+<td width="50%">
+
+**Calendar-Based Scheduling**
+- Daily, weekly, monthly, yearly frequencies
+- Multiple time slots per day
+- Specific weekday selection
+- Month-end reporting support
+
+</td>
+<td width="50%">
+
+**Business Day Intelligence**
+- Holiday calendar management
+- Import standard calendars (TARGET2, US Federal, UK Bank)
+- Blackout date configuration
+- T+0, T+1, T+2 business date offsets
+
+</td>
+</tr>
+</table>
+
+- **Schedule Dependencies** — Chain reports that must run in sequence
+- **Preview Mode** — See upcoming run times before saving
+- **Manual Trigger** — Execute schedules on-demand
 
 ### Validation Engine
 
@@ -140,6 +270,20 @@ OpenReg features a state machine-based workflow engine for reliable report execu
 - **Post-generation validation** — Verify output compliance
 - **Exception queue** — Review, correct, and resubmit failed records
 - **Validation severity levels** — Blocking, warning, and correctable rules
+- **Bulk amendment** — Correct multiple records efficiently
+
+### Delivery & Acknowledgment
+
+| Protocol | Features |
+|----------|----------|
+| **SFTP** | SSH key and password authentication, configurable paths |
+| **FTP** | Secure FTP with TLS support |
+| **Email** | SMTP delivery with attachments |
+
+- Automatic retry with configurable backoff
+- Delivery acknowledgment tracking
+- File naming templates with tokens
+- Delivery status webhooks
 
 ### Partner API & Webhooks
 
@@ -160,7 +304,7 @@ OpenReg features a state machine-based workflow engine for reliable report execu
 - Real-time event notifications
 - HMAC-SHA256 signed payloads
 - Configurable retry with backoff
-- Events: job.started, job.completed, job.failed, artifact.created, validation.failed
+- Events: `job.started`, `job.completed`, `job.failed`, `artifact.created`, `validation.failed`
 
 </td>
 </tr>
@@ -190,13 +334,46 @@ OpenReg features a state machine-based workflow engine for reliable report execu
 | **Rate Limiting** | Redis-backed rate limiting with tier-based limits |
 | **Query Safety** | Timeout enforcement, row limits, SQL injection detection |
 
-### Sandbox Mode
+---
 
-Test your integrations safely before going live:
+## 🌍 Supported Regulations
 
-- **Mock Connectors** — Generate sample data without real database connections
-- **Simulated Delivery** — Test SFTP/FTP delivery without actually sending files
-- **Environment Toggle** — Switch between sandbox and production via API
+OpenReg provides packaged report templates with pre-configured field mappings, validation rules, and XML schemas for major regulatory regimes.
+
+### European Union
+
+| Regulation | Description | Message Types |
+|------------|-------------|---------------|
+| **EMIR Refit** | OTC derivatives reporting to trade repositories | `auth.030`, `auth.031` |
+| **MiFIR/MiFID II** | Transaction reporting for financial instruments | `auth.016`, `auth.017`, `auth.040` |
+| **SFTR** | Securities financing transaction reporting | `auth.052`, `auth.053` |
+
+### United Kingdom
+
+| Regulation | Description | Status |
+|------------|-------------|--------|
+| **UK EMIR** | Post-Brexit derivatives reporting | ✅ Supported |
+| **UK MiFIR** | UK transaction reporting | ✅ Supported |
+| **UK SFTR** | UK securities financing reporting | ✅ Supported |
+
+### Planned Support
+
+| Regulation | Jurisdiction | Timeline |
+|------------|--------------|----------|
+| **CFTC Rewrite** | United States | Q2 2026 |
+| **SEC CAT** | United States | Q3 2026 |
+| **MAS Reporting** | Singapore | Q4 2026 |
+| **ASIC Reporting** | Australia | 2027 |
+
+### Packaged Report Templates
+
+Each regulation package includes:
+
+- ✅ Pre-built XML/JSON output templates
+- ✅ Field mappings to Common Data Model
+- ✅ Validation rules per regulatory specification
+- ✅ Data Quality Indicators (DQIs)
+- ✅ Sample data for testing
 
 ---
 
@@ -226,12 +403,12 @@ Test your integrations safely before going live:
          ▼                      ▼                      ▼
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │   PostgreSQL    │   │      Redis      │   │      MinIO      │
-│   (Metadata)    │   │   (Job Queue)   │   │   (Artifacts)   │
-│                 │   │                 │   │                 │
-│  • Reports      │   │  • Task Queue   │   │  • Report Files │
-│  • Versions     │   │  • Rate Limits  │   │  • Audit Logs   │
-│  • Audit Logs   │   │  • Token Store  │   │  • Backups      │
-│  • Webhooks     │   │  • Caching      │   │                 │
+│   (Metadata +   │   │   (Job Queue)   │   │   (Artifacts)   │
+│      CDM)       │   │                 │   │                 │
+│                 │   │  • Task Queue   │   │  • Report Files │
+│  • Reports      │   │  • Rate Limits  │   │  • Audit Logs   │
+│  • CDM Tables   │   │  • Token Store  │   │  • Backups      │
+│  • Audit Logs   │   │  • Caching      │   │                 │
 └─────────────────┘   └────────┬────────┘   └─────────────────┘
                                │
                                ▼
@@ -242,10 +419,19 @@ Test your integrations safely before going live:
 │  │        (Workflow Engine, Delivery, Webhooks)               │  │
 │  │                                                             │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │  │
-│  │  │  Workflow   │  │  Validator  │  │  Webhook    │         │  │
-│  │  │  Executor   │  │  Engine     │  │  Delivery   │         │  │
+│  │  │  Workflow   │  │  Validator  │  │  Delivery   │         │  │
+│  │  │  Executor   │  │  Engine     │  │  Service    │         │  │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘         │  │
 │  └─────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                   EXTERNAL CONNECTIONS                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
+│  │   Source    │  │    Trade    │  │   SFTP/FTP  │               │
+│  │  Databases  │  │ Repositories│  │   Servers   │               │
+│  └─────────────┘  └─────────────┘  └─────────────┘               │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -253,11 +439,12 @@ Test your integrations safely before going live:
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| **Frontend** | React 18, TypeScript, Vite | Modern SPA with type safety |
+| **Frontend** | React 18, TypeScript, Vite, TailwindCSS | Modern SPA with type safety |
 | **Backend** | FastAPI, Python 3.11+ | High-performance async API |
-| **Database** | PostgreSQL 15 | Metadata, configuration, audit logs |
+| **Database** | PostgreSQL 15 | Metadata, CDM, configuration, audit logs |
 | **Queue** | Celery + Redis | Distributed task execution |
 | **Storage** | MinIO (S3-compatible) | Report artifacts and files |
+| **Scheduling** | Celery Beat | Cron and calendar-based scheduling |
 | **Execution** | RestrictedPython | Secure sandboxed code execution |
 | **Logging** | structlog | Structured JSON logging |
 
@@ -285,7 +472,7 @@ curl http://localhost:8000/api/v1/reports \
   -H "X-API-Key: ork_your_api_key_here"
 ```
 
-### API Quick Reference
+### API Endpoints
 
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
@@ -293,30 +480,18 @@ curl http://localhost:8000/api/v1/reports \
 | **Reports** | `/reports`, `/reports/{id}/execute` | Create, configure, execute reports |
 | **Runs** | `/runs`, `/runs/{id}/artifacts` | View execution history, download files |
 | **Connectors** | `/connectors`, `/connectors/{id}/test` | Database connections |
-| **Destinations** | `/destinations` | SFTP/FTP delivery endpoints |
-| **Schedules** | `/schedules` | Cron and calendar scheduling |
+| **Destinations** | `/destinations` | SFTP/FTP/Email delivery endpoints |
+| **Schedules** | `/schedules`, `/schedules/preview` | Cron and calendar scheduling |
+| **Holiday Calendars** | `/holiday-calendars` | Business day calendar management |
 | **Validations** | `/validations` | Data quality rules |
-| **Mappings** | `/mappings` | Cross-reference data |
+| **Exceptions** | `/exceptions` | Validation exception management |
+| **CDM** | `/cdm/catalog`, `/cdm/lineage` | Common Data Model exploration |
+| **Data Quality** | `/data-quality`, `/dqi` | Quality metrics and indicators |
 | **Workflow** | `/workflow/runs/{id}/workflow` | Real-time execution status |
 | **Webhooks** | `/webhooks` | Event notifications |
 | **API Keys** | `/api-keys` | Programmatic access management |
 | **Admin** | `/admin/users`, `/admin/roles` | User and role management |
 | **Dashboard** | `/dashboard/daily-summary` | Summary statistics |
-
-### Example: Execute a Report
-
-```bash
-# Execute report and get job ID
-JOB=$(curl -s -X POST "http://localhost:8000/api/v1/reports/$REPORT_ID/execute" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"parameters": {"business_date": "2024-01-19"}}' \
-  | jq -r '.job_run_id')
-
-# Check progress
-curl "http://localhost:8000/api/v1/workflow/runs/$JOB/workflow/progress" \
-  -H "Authorization: Bearer $TOKEN"
-```
 
 ### Interactive Documentation
 
@@ -325,30 +500,6 @@ curl "http://localhost:8000/api/v1/workflow/runs/$JOB/workflow/progress" \
 | Swagger UI | http://localhost:8000/docs | Try API calls interactively |
 | ReDoc | http://localhost:8000/redoc | Browsable documentation |
 | OpenAPI JSON | http://localhost:8000/api/v1/openapi.json | Machine-readable spec |
-
-> **Full API Reference**: See [docs/API_GUIDE.md](docs/API_GUIDE.md) for complete documentation with curl and Python examples for all 24 API routers.
-
----
-
-## 🌍 Supported Regulatory Regimes
-
-OpenReg supports multiple regulatory reporting frameworks with active development for additional jurisdictions.
-
-### Currently Supported
-
-| Regime | Jurisdiction | Description |
-|--------|--------------|-------------|
-| **MiFIR/MiFID II** | European Union | Transaction reporting under RTS 25 |
-| **UK MiFIR** | United Kingdom | Post-Brexit UK transaction reporting |
-
-### In Development
-
-| Regime | Jurisdiction | Status |
-|--------|--------------|--------|
-| **EMIR Refit** | European Union | 🔄 In Development |
-| **UK EMIR** | United Kingdom | 🔄 In Development |
-| **CFTC Rewrite** | United States | 📋 Planned |
-| **SEC Reporting** | United States | 📋 Planned |
 
 ---
 
@@ -381,14 +532,24 @@ OpenReg supports multiple regulatory reporting frameworks with active developmen
 - Comprehensive audit event system
 - Query safety (timeouts, row limits, injection detection)
 
-### 📋 v1.0 — Enterprise (Planned)
+### ✅ v0.4 — Data Quality & CDM (Completed)
+- Common Data Model (CDM) with canonical schemas
+- Field-level lineage tracking
+- Data Quality Indicators (DQIs) framework
+- Packaged regulation templates (EMIR, MiFIR, SFTR)
+- Advanced calendar-based scheduling
+- Holiday calendar management
+- Schedule dependencies
+- Email delivery protocol
+
+### 📋 v1.0 — Enterprise (In Development)
 - Approval workflows for report changes
 - External authentication (OIDC/SAML)
 - Kubernetes/Helm deployment charts
 - Prometheus metrics and Grafana dashboards
 - OpenTelemetry distributed tracing
-- Data lineage visualization
-- Advanced scheduling with dependencies
+- Advanced data lineage visualization
+- Report comparison and diff tools
 
 ---
 
@@ -420,6 +581,9 @@ cd backend && pytest --cov=. --cov-report=html
 
 # Frontend tests
 cd frontend && npm test
+
+# End-to-end tests
+cd e2e && npx playwright test
 ```
 
 ### Code Quality
@@ -491,9 +655,15 @@ If you discover a security vulnerability, please report it responsibly by emaili
 
 ## 💬 Community & Support
 
-- **GitHub Issues** — [Report bugs and request features](https://github.com/Hansie91/OpenReg/issues)
-- **GitHub Discussions** — [Ask questions and share ideas](https://github.com/Hansie91/OpenReg/discussions)
-- **Documentation** — [Comprehensive guides in `/docs`](docs/)
+| Channel | Link | Description |
+|---------|------|-------------|
+| **GitHub Issues** | [Report bugs](https://github.com/Hansie91/OpenReg/issues) | Bug reports and feature requests |
+| **GitHub Discussions** | [Ask questions](https://github.com/Hansie91/OpenReg/discussions) | Community Q&A and ideas |
+| **Documentation** | [/docs](docs/) | Comprehensive guides |
+
+### Enterprise Support
+
+For enterprise support inquiries, dedicated SLAs, or professional services, please contact us at [enterprise@openreg.io](mailto:enterprise@openreg.io).
 
 ---
 
@@ -508,13 +678,16 @@ OpenReg is built on the shoulders of these excellent open-source projects:
 - [Redis](https://redis.io/) — In-memory data store
 - [MinIO](https://min.io/) — S3-compatible object storage
 - [structlog](https://www.structlog.org/) — Structured logging
-- [SlowAPI](https://github.com/laurentS/slowapi) — Rate limiting
-- [RestrictedPython](https://restrictedpython.readthedocs.io/) — Secure code execution
+- [TailwindCSS](https://tailwindcss.com/) — Utility-first CSS framework
 
 ---
 
 <p align="center">
   <strong>Built for the regulatory reporting community</strong>
-  <br>
-  <sub>© 2024-2025 OpenReg Contributors. Licensed under Apache 2.0.</sub>
+  <br><br>
+  <a href="https://github.com/Hansie91/OpenReg">⭐ Star us on GitHub</a> •
+  <a href="https://github.com/Hansie91/OpenReg/issues">🐛 Report an Issue</a> •
+  <a href="https://github.com/Hansie91/OpenReg/discussions">💬 Join the Discussion</a>
+  <br><br>
+  <sub>© 2024-2026 OpenReg Contributors. Licensed under Apache 2.0.</sub>
 </p>
